@@ -17,6 +17,56 @@ from forward_operator import FOUtils as FO
 from forward_operator import FOconstants as FOcon
 import ceilUtils as ceil
 
+def remove_cloud_effected_backscatter(cld_data, var, backscatter, cbh_lower_gates, max_height):
+
+    """
+    Make smoothed backscatter nan that has some cloud backscatter in it
+    1) lower all CBH down by x range gates as set by cbh_lower_gates, as Vaisala algorithm often puts CBH
+           within the cloud. This creates a sort of buffer and lower limit to the cloud extent.
+    2) for each new CBH below 'max_height', find effect backscatter around it, and make it nan
+    3) for all backscatter above CBH, make it nan
+
+    :param cld_data (dictionary):
+    :param var (str): the key to the cld_data dictionary
+    :param backscatter:
+    :param cbh_lower_gates:
+    :param max_height [m]: cut off limit to do the cbh correction to. As a cut off is used elsewhere in code,
+                            this allows some iterations to be skipped.
+    :return: backscatter (array)
+    """
+
+    a=1
+
+    # 1) reduce CBH to below cloud
+    cld_data[var] = cld_data[var] - (cbh_lower_gates * cld_data['range'][0])
+
+    # get time based idx of cbh
+    cld_idx = np.where(~np.isnan(cld_data[var]))[0]
+
+    for cbh_t, cld_idx_t in zip(cld_data[var][cld_idx], cld_idx):
+
+        # if the cbh would be below the max_height and therefore effect the remaining backscatter profiles ...
+        # 10.0 is based on CL31 gate range
+        if cbh_t - (cbh_lower_gates * 10.0) <= max_height:
+            # 2) nan "contaminated" backscatter values around CBH
+            #   time smoothing was 25 min (101 time steps, therefore find idx 50 before and after)
+            #   make sure lowest (highest) idx position is 0 (len(time)) (don't go off the edge!)
+            #   (50+1) as range needs an extra 1 to include the extra idx position
+            # t_range = np.arange(np.max([cld_idx_t-50, 0]),
+            #                 np.min([cld_idx_t+50+1, len(cld_data['time'])]))
+            t_range = np.array(range(np.max([cld_idx_t-50, 0]),
+                            np.min([cld_idx_t+50+1, len(cld_data['time'])])))
+
+            # get height range of effected backscatter
+            cbh_height_idx = eu.binary_search(cld_data['height'], cbh_t)
+            # h_range = np.arange(np.max([cbh_height_idx-5, 0]), max_height_idx, dtype='int64')
+            h_range = np.array(range(np.max([cbh_height_idx-5, 0]), max_height_idx))
+
+            # nan effected profiles
+            backscatter[t_range, h_range] = np.nan
+
+    return backscatter
+
 if __name__ == '__main__':
 
     # ==============================================================================
@@ -64,6 +114,12 @@ if __name__ == '__main__':
     elif corr_type == 'height':
         axis=1
 
+    # number of range gate to lower CBH height by, as Vaisala algorithm puts CBH inside the cloud
+    cbh_lower_gates = 4
+
+    # minimum number of pairs to have in a correlation
+    min_corr_pairs = 6
+
     # ==============================================================================
     # Read data
     # ==============================================================================
@@ -110,32 +166,11 @@ if __name__ == '__main__':
             _, max_height_idx, _ = eu.nearest(bsc_obs[site]['height'], max_height)
             bsc_obs[site]['backscatter'][:, max_height_idx+1:] = np.nan
 
-            # make smoothed backscatter nan that has some cloud backscatter in it
-            # 1) lower all CBH down by 4 range gates (40 m), as Vaisala algorithm often puts CBH within the cloud
-            # 2) for each new CBH below 'max_height', find effect backscatter around it, and make it nan
-            # 3) for all backscatter above CBH, make it nan
 
-            # 1)
-            if bsc_obs[site]['range'][0] != 0.0:
-                cld_obs[site]['CLD_Height_L1'] =- (4.0 * bsc_obs[site]['range'][0])
-            else:
-                raise ValueError('bsc_obs[site][\'range\'][0] == 0.0, and can\'t be used to get instrument ' + \
-                                 'resolution for CBH correction')
-
-            cld_idx = np.where(~np.isnan(cld_obs[site]['CLD_Height_L1']))[0]
-
-            for cbh, cld_idx_t in zip(cld_obs[site]['CLD_Height_L1'][cld_idx], cld_idx):
-
-                # 2) nan "contaminated" backscatter values around CBH
-                #   time smoothing was 25 min (101 time steps, therefore find idx 50 before and after)
-                t_range = range(cld_idx_t-50, cld_idx_t+50)
-
-                cbh_height_idx = eu.binary_search(cld_obs[site]['height'], cbh)
-
-                #h_range = range()
-
-                #bsc_obs[site]['backscatter'][]
-
+            # nan cloud effected backscatter points
+            bsc_obs[site]['backscatter'] = \
+                remove_cloud_effected_backscatter(cld_obs[site], 'CLD_Height_L1',  bsc_obs[site]['backscatter'],
+                                                  cbh_lower_gates, max_height)
 
         if corr_type == 'time':
             # carry out statistics on the profiles
@@ -144,6 +179,8 @@ if __name__ == '__main__':
                 # fast to do this, and index data, than use nan_policy='omi' in spearmanr function
                 idx = np.isfinite(bsc_obs[sites[0]]['backscatter'][t, :]) & \
                       np.isfinite(bsc_obs[sites[1]]['backscatter'][t, :])
+
+
 
                 # spearman correlation
                 corr_rs[t, d], corr_ps[t, d] = \
@@ -160,6 +197,7 @@ if __name__ == '__main__':
                 # fast to do this, and index data, than use nan_policy='omi' in spearmanr function
                 idx = np.isfinite(bsc_obs[sites[0]]['backscatter'][:, h]) & \
                       np.isfinite(bsc_obs[sites[1]]['backscatter'][:, h])
+
 
                 # spearman correlation
                 corr_rs[h, d], corr_ps[h, d] = \
