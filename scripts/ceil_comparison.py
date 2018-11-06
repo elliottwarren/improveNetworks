@@ -52,18 +52,17 @@ def remove_cloud_effected_backscatter(cld_data, var, backscatter, cbh_lower_gate
             #   time smoothing was 25 min (101 time steps, therefore find idx 50 before and after)
             #   make sure lowest (highest) idx position is 0 (len(time)) (don't go off the edge!)
             #   (50+1) as range needs an extra 1 to include the extra idx position
-            # t_range = np.arange(np.max([cld_idx_t-50, 0]),
-            #                 np.min([cld_idx_t+50+1, len(cld_data['time'])]))
-            t_range = np.array(range(np.max([cld_idx_t-50, 0]),
-                            np.min([cld_idx_t+50+1, len(cld_data['time'])])))
+            t_s = np.max([cld_idx_t-50, 0])
+            t_e = np.min([cld_idx_t+50+1, len(cld_data['time'])])
 
             # get height range of effected backscatter
             cbh_height_idx = eu.binary_search(cld_data['height'], cbh_t)
             # h_range = np.arange(np.max([cbh_height_idx-5, 0]), max_height_idx, dtype='int64')
-            h_range = np.array(range(np.max([cbh_height_idx-5, 0]), max_height_idx))
+            h_s = np.max([cbh_height_idx-5, 0])
+            h_e = max_height_idx
 
             # nan effected profiles
-            backscatter[t_range, h_range] = np.nan
+            backscatter[t_s:t_e, h_s:h_e] = np.nan
 
     return backscatter
 
@@ -85,10 +84,11 @@ if __name__ == '__main__':
     ceil_lambda_nm = 905
 
     # 12 very clear days. Just compare \beta_o below 1500 m. 2008 KSK15S pair
-    # daystrList = ['20080208', '20080209', '20080210', '20080211', '20080217', '20080506', '20080507', '20080508',
-    #               '20080510', '20080511', '20080512', '20080730']
+    daystrList = ['20080208', '20080209', '20080210', '20080211', '20080217', '20080506', '20080507', '20080508',
+                  '20080510', '20080511', '20080512', '20080730']
 
-    daystrList = ['20080730']
+    # test partial cloud day
+    # daystrList = ['20080730']
 
     # # 2018 clear sky days for LUMA network
     # daystrList = ['20180418','20180419','20180420','20180505','20180506','20180507','20180514','20180515','20180519',
@@ -103,7 +103,7 @@ if __name__ == '__main__':
     sites = site_bsc.keys()
 
     # max height to cut off backscatter (avoice clouds above BL)
-    max_height = 1500.0
+    max_height = 2000.0
 
     # correlate in height or in time?
     corr_type = 'height'
@@ -174,17 +174,19 @@ if __name__ == '__main__':
 
         if corr_type == 'time':
             # carry out statistics on the profiles
-            for t, _ in enumerate(bsc_obs[sites[0]]['backscatter']):
+            for t, _ in enumerate(bsc_obs[sites[0]]['time']):
 
                 # fast to do this, and index data, than use nan_policy='omi' in spearmanr function
-                idx = np.isfinite(bsc_obs[sites[0]]['backscatter'][t, :]) & \
-                      np.isfinite(bsc_obs[sites[1]]['backscatter'][t, :])
+                finite_bool = np.isfinite(bsc_obs[sites[0]]['backscatter'][t, :]) & \
+                              np.isfinite(bsc_obs[sites[1]]['backscatter'][t, :])
 
+                # if the number of pairs to correlate is high enough ... correlate
+                if np.sum(finite_bool) >= min_corr_pairs:
 
-
-                # spearman correlation
-                corr_rs[t, d], corr_ps[t, d] = \
-                    spearmanr(bsc_obs[sites[0]]['backscatter'][t, idx], bsc_obs[sites[1]]['backscatter'][t, idx])
+                    # spearman correlation
+                    corr_rs[t, d], corr_ps[t, d] = \
+                        spearmanr(bsc_obs[sites[0]]['backscatter'][t, finite_bool],
+                                  bsc_obs[sites[1]]['backscatter'][t, finite_bool])
 
         elif corr_type == 'height':
 
@@ -195,28 +197,31 @@ if __name__ == '__main__':
             for h, _ in enumerate(bsc_obs[sites[0]]['height']):
 
                 # fast to do this, and index data, than use nan_policy='omi' in spearmanr function
-                idx = np.isfinite(bsc_obs[sites[0]]['backscatter'][:, h]) & \
-                      np.isfinite(bsc_obs[sites[1]]['backscatter'][:, h])
+                finite_bool = np.isfinite(bsc_obs[sites[0]]['backscatter'][:, h]) & \
+                              np.isfinite(bsc_obs[sites[1]]['backscatter'][:, h])
 
+                # if the number of pairs to correlate is high enough ... correlate
+                if np.sum(finite_bool) >= min_corr_pairs:
 
-                # spearman correlation
-                corr_rs[h, d], corr_ps[h, d] = \
-                    spearmanr(bsc_obs[sites[0]]['backscatter'][idx, h], bsc_obs[sites[1]]['backscatter'][idx, h])
+                    # spearman correlation
+                    corr_rs[h, d], corr_ps[h, d] = \
+                        spearmanr(bsc_obs[sites[0]]['backscatter'][finite_bool, h],
+                                  bsc_obs[sites[1]]['backscatter'][finite_bool, h])
 
     # ==============================================================================
     # Plotting
     # ==============================================================================
 
-    plt.plot(bsc_obs[sites[0]]['backscatter'][idx, h], label=sites[0])
-    plt.plot(bsc_obs[sites[1]]['backscatter'][idx, h], label=sites[1])
-    plt.legend()
-    plt.suptitle(bsc_obs[sites[0]]['time'][0].strftime('%d/%m/%Y') + ' - DOY:' + bsc_obs[sites[0]]['time'][0].strftime('%j') +'; h='+str(bsc_obs[sites[0]]['height'][h])+'m')
-
+    # plt.plot(bsc_obs[sites[0]]['backscatter'][finite_bool, h], label=sites[0])
+    # plt.plot(bsc_obs[sites[1]]['backscatter'][finite_bool, h], label=sites[1])
+    # plt.legend()
+    # plt.suptitle(bsc_obs[sites[0]]['time'][0].strftime('%d/%m/%Y') + ' - DOY:' + bsc_obs[sites[0]]['time'][0].strftime('%j') +'; h='+str(bsc_obs[sites[0]]['height'][h])+'m')
+    #
+    # idx = np.array([all(np.isfinite(row)) for row in corr_rs])
     med_rs = np.nanmedian(corr_rs, axis=axis)
     pct25_rs = np.nanpercentile(corr_rs, 25, axis=axis)
     pct75_rs = np.nanpercentile(corr_rs, 75, axis=axis)
 
-    idx = np.array([all(np.isfinite(row)) for row in corr_rs])
 
     if corr_type == 'time':
 
@@ -232,9 +237,11 @@ if __name__ == '__main__':
         ax.xaxis.set_major_formatter(DateFormatter('%H:%M'))
         plt.suptitle(sites[0] + '_' + sites[1] +'; '+str(len(daystrList))+' days; 15sec')
 
-        plt.savefig(savedir + sites[0] + '_' + sites[1] + '_spearmanr.png')
+        plt.savefig(savedir + sites[0] + '_' + sites[1] + '_spearmanr_time_cldexclude.png')
 
     elif corr_type == 'height':
+
+        idx = np.array([all(np.isfinite(row)) for row in corr_rs])
 
         fig = plt.figure()
         ax = plt.gca()
@@ -249,7 +256,7 @@ if __name__ == '__main__':
         # ax.xaxis.set_major_formatter(DateFormatter('%H:%M'))
         plt.suptitle(sites[0] + '_' + sites[1] + '; ' + str(len(daystrList)) + ' days; 15sec')
 
-        plt.savefig(savedir + sites[0] + '_' + sites[1] + '_spearmanr_height.png')
+        plt.savefig(savedir + sites[0] + '_' + sites[1] + '_spearmanr_height_cldexclude.png')
 
 
     print 'END PROGRAM'
