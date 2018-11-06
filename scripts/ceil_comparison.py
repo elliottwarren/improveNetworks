@@ -102,6 +102,7 @@ if __name__ == '__main__':
     ceilCLDDatadir = datadir + 'L0/KSK15S/'
     savedir = maindir + 'figures/obs_intercomparison/paired/'
     ceilMetaDatadir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/clearFO/data/'
+    npysavedir = datadir + 'numpy/'
 
     # wavelength (int) [nm]
     ceil_lambda_nm = 905
@@ -120,12 +121,21 @@ if __name__ == '__main__':
     days_iterate = eu.dateList_to_datetime(daystrList)
     # [i.strftime('%Y%j') for i in days_iterate]
 
-    site_bsc = {'CL31-A_KSK15S': 40.5 - 31.4,
-                'CL31-B_KSK15S': 40.5 - 31.4}
+    # import all site names and heights
+    site_bsc = ceil.site_bsc
+
+    # main ceil to the statistics with
+    main_ceil_name = 'CL31-C_MR'
+    main_ceil = {main_ceil_name: site_bsc[main_ceil_name]}
+
+    # KSK15S pair
+    # site_bsc = {'CL31-A_KSK15S': 40.5 - 31.4,
+    #             'CL31-B_KSK15S': 40.5 - 31.4}
 
     sites = site_bsc.keys()
 
-    # max height to cut off backscatter (avoice clouds above BL)
+    # min and max height to cut off backscatter (avoice clouds above BL, make sure all ceils start fairly from bottom)
+    min_height = 0.0
     max_height = 2000.0
 
     # correlate in height or in time?
@@ -143,6 +153,10 @@ if __name__ == '__main__':
 
     # minimum number of pairs to have in a correlation
     min_corr_pairs = 6
+
+    # save?
+    numpy_save = True
+    savestr = main_ceil_name + '_statistics'
 
     # ==============================================================================
     # Read data
@@ -177,6 +191,11 @@ if __name__ == '__main__':
             _, max_height_idx, _ = eu.nearest(bsc_obs[site]['height'], max_height)
             bsc_obs[site]['backscatter'][:, max_height_idx+1:] = np.nan
 
+            # make all backscatter below a min_height allowed nan (e.g. all below 70 m so all
+            #   ceils start in the same place)
+            if min_height != 0.0:
+                _, min_height_idx, _ = eu.nearest(bsc_obs[site]['height'], min_height)
+                bsc_obs[site]['backscatter'][:, :min_height_idx+1] = np.nan
 
             # nan cloud effected backscatter points
             bsc_obs[site]['backscatter'] = \
@@ -184,46 +203,37 @@ if __name__ == '__main__':
                                                   cbh_lower_gates, max_height)
 
         if corr_type == 'time':
-
-            np.take(arr, indices, axis=3)
-
-            # carry out statistics on the profiles
-            for t, _ in enumerate(bsc_obs[sites[0]]['time']):
-
-                # extract out 1d arrays from each
-                x = bsc_obs[sites[0]]['backscatter'][t, :]
-                y = bsc_obs[sites[1]]['backscatter'][t, :]
-
-                # fast to do this, and index data, than use nan_policy='omi' in spearmanr function
-                finite_bool = np.isfinite(x) & np.isfinite(y)
-
-                # do stats
-                stats_func = 1
-
-                # if the number of pairs to correlate is high enough ... correlate
-                if np.sum(finite_bool) >= min_corr_pairs:
-
-                    # spearman correlation
-                    statistics['corr_rs'][t, d], statistics['corr_ps'][t, d] = \
-                        spearmanr(x[finite_bool], y[finite_bool])
-
+            dimension = bsc_obs[sites[0]]['time']
         elif corr_type == 'height':
+            dimension = bsc_obs[sites[0]]['height']
+        else:
+            raise ValueError('corr_type not time or height!')
 
-            # # find max height
-            # _, max_height_idx, _ = eu.nearest(bsc_obs[site]['height'], max_height)
+        # carry out statistics on the profiles
+        for i, _ in enumerate(dimension):
 
-            # carry out statistics on each range gate
-            for h, _ in enumerate(bsc_obs[sites[0]]['height']):
+            # extract out 1d arrays from each, either in time or height
+            x = np.take(bsc_obs[sites[0]]['backscatter'], i, axis=axis)
+            y = np.take(bsc_obs[sites[1]]['backscatter'], i, axis=axis)
 
-                x = bsc_obs[sites[0]]['backscatter'][:, h]
-                y = bsc_obs[sites[1]]['backscatter'][:, h]
+            # mainly for the correlation functions which can misbehave when nans are involved...
+            finite_bool = np.isfinite(x) & np.isfinite(y)
 
-                # fast to do this, and index data, than use nan_policy='omi' in spearmanr function
-                finite_bool = np.isfinite(x) &  np.isfinite(y)
+            # do stats
+            # stats_func = 1
 
-                stats_func = 1
+            # if the number of pairs to correlate is high enough ... correlate
+            if np.sum(finite_bool) >= min_corr_pairs:
+
+                # spearman correlation
+                statistics['corr_rs'][i, d], statistics['corr_ps'][i, d] = \
+                    spearmanr(x[finite_bool], y[finite_bool])
+
     # save statistics in numpy array
-
+    if numpy_save == True:
+        save_dict = {'statistics': statistics, 'cases': days_iterate, 'sites': sites, 'main_ceil': main_ceil}
+        np.save(npysavedir + savestr, save_dict)
+        print 'data saved!: ' + npysavedir + savestr
 
     # ==============================================================================
     # Plotting
