@@ -11,6 +11,7 @@ from scipy.stats import pearsonr
 import datetime as dt
 from matplotlib.ticker import FormatStrFormatter
 from matplotlib.dates import DateFormatter
+from copy import deepcopy
 
 import ellUtils as eu
 from forward_operator import FOUtils as FO
@@ -18,13 +19,14 @@ from forward_operator import FOconstants as FOcon
 import ceilUtils as ceil
 
 
-def setup_statistics(corr_type):
+def setup_statistics(corr_type, paired_sites):
     """
     Set up the statistics dictionary. Arrays of predefined size, based on the corr_type
     :param corr_type:
     :return:
     """
 
+    # which variable will the statistics be carried out in (time or height?) - make array correct shape
     if corr_type == 'time':
         dim_length = 5761
     if corr_type == 'height':
@@ -32,11 +34,14 @@ def setup_statistics(corr_type):
     else:
         raise ValueError('corr_type not set as time or height!')
 
+    # set up empty arrays filled with nans
+    # statistics dict -> site -> actual statistics e.g. correlation
     statistics = {}
-
-    for var in ['corr_rs', 'corr_ps']:
-        statistics[var] = np.empty((dim_length, len(daystrList)))
-        statistics[var][:] = np.nan
+    for site_i in paired_sites:
+        statistics[site_i] = {}
+        for var in ['corr_rs', 'corr_ps']:
+            statistics[site_i][var] = np.empty((dim_length, len(daystrList)))
+            statistics[site_i][var][:] = np.nan
 
     return statistics
 
@@ -89,6 +94,107 @@ def remove_cloud_effected_backscatter(cld_data, var, backscatter, cbh_lower_gate
 
     return backscatter
 
+def nearest_heights(x_height, y_height, max_height):
+
+    """
+    Get an idx array of the nearest y height to each x height. Makes sure each x_i in x height, has a single unique
+    y_i pair from y height. Additional duplicate y pairings to a single x_i are removed. Works with height arrays
+    of any length, with any relative start and end heights.
+
+    Trims off any pairs where x_i was above a defined 'max_height'
+
+    :param x_height (array):
+    :param y_height:
+    :param corr_max_height (float): maximum height of x_i in any x_i pair. Pairs over this height are removed.
+    :return:
+    """
+
+    def unique_pairs(y_idx, diff):
+
+        """
+        Find range that excludes duplicate occurances. Keeps the pair with the smallest height difference and removes
+        the rest.
+
+        :param y_idx:
+        :param diff:
+        :return: unique_pairs_range
+
+        At this point, the two arrays are like:
+        y_idx = [0, 0, 0, 1, 3, 5, .... 769, 769, 769]
+        x_idx = [0, 1, 2, 3, 4, 4, .... 67,  68,  69 ]
+        By finding the unique pairs index array for y_idx, the same array can be used
+        on the x_idx, as they are already paired up and of equal lengths. E.g. from above
+        0-0, 0-1, ..., 3-4, 5-4 etc.
+        """
+
+        # 1. remove start duplicates
+        # -------------------------------
+        # find start idx to remove duplicate pairs
+        duplicates = np.where(y_idx == y_idx[0])[0]  # find duplicates
+
+        if len(duplicates) > 1:
+            lowest_diff = np.argmin(abs(diff[duplicates]))  # find which has smallest difference
+            pairs_idx_start = duplicates[lowest_diff]  # set start position for pairing at this point
+        else:
+            pairs_idx_start = 0
+
+        # 2. remove end duplicates
+        # -------------------------------
+        # find end idx to remove duplicate pairs
+        duplicates = np.where(y_idx == y_idx[-1])[0]  # find duplicates
+        if len(duplicates) > 1:
+            lowest_diff = np.argmin(abs(diff[duplicates]))  # find which has smallest difference
+            pairs_idx_end = duplicates[lowest_diff]  # set start position for pairing at this point
+        else:
+            pairs_idx_end = len(y_idx)
+
+        # create range in order to extract the unique pairs
+        # unique_pairs_range = np.arange(pairs_idx_start, pairs_idx_end + 1)
+        unique_pairs_range = np.arange(pairs_idx_start, pairs_idx_end)
+
+        return unique_pairs_range
+
+    a = np.array([eu.nearest(y_height, i) for i in x_height])
+    values = a[:, 0]
+    y_idx = np.array(a[:, 1], dtype=int)
+    diff = a[:, 2]
+    x_idx = np.arange(len(x_height))  # x_idx should be paired with y_idx spots.
+
+    # Trim off the ends of y_idx, as UKV and y z0 and zmax are different, leading to the same gate matching multiple ukvs
+    # assumes no duplicates in the middle of the arrays, just at the end
+
+    # At this point, variables are like:
+    # y_idx = [0, 0, 0, 1, 3, 5, .... 769, 769, 769]
+    # x_idx = [0, 1, 2, 3, 4, 4, .... 67,  68,  69 ]
+    unique_pairs_range = unique_pairs(y_idx, diff)
+
+    # ALL unique pairs
+    # Use these to plot correlations for all possible pairs, regardless of height
+    y_unique_pairs = y_idx[unique_pairs_range]
+    x_unique_pairs = x_idx[unique_pairs_range]
+    values_unique_pairs = values[unique_pairs_range]
+    diff_unique_pairs = diff[unique_pairs_range]
+
+    # ~~~~~~~~~~~~~~~~~~~~ #
+
+    # Remove pairs where y is above the max allowed height.
+    # hc = height cut
+    hc_unique_pairs_range = np.where(values_unique_pairs <= max_height)[0]
+
+    # trim off unique pairs that are above the maximum height
+    y_hc_unique_pairs = y_unique_pairs[hc_unique_pairs_range] # final idx for y
+    x_hc_unique_pairs = x_unique_pairs[hc_unique_pairs_range] # final idx for x
+    pairs_hc_unique_values = values_unique_pairs[hc_unique_pairs_range]
+    pairs_hc_unique_diff = diff_unique_pairs[hc_unique_pairs_range]
+
+    # get actual unique heights of each
+    y_unique_pairs_heights = pairs_hc_unique_values
+    x_unique_pairs_heights = y_unique_pairs_heights - pairs_hc_unique_diff
+
+
+    return x_hc_unique_pairs, y_hc_unique_pairs, \
+           x_unique_pairs_heights, y_unique_pairs_heights
+
 if __name__ == '__main__':
 
     # ==============================================================================
@@ -98,14 +204,11 @@ if __name__ == '__main__':
     # directories
     maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
     datadir = maindir + 'data/'
-    ceilDatadir = datadir + 'L1/KSK15S/'
-    ceilCLDDatadir = datadir + 'L0/KSK15S/'
+    ceilDatadir = datadir + 'L1/'
+    ceilCLDDatadir = datadir + 'L0/'
     savedir = maindir + 'figures/obs_intercomparison/paired/'
     ceilMetaDatadir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/clearFO/data/'
-    npysavedir = datadir + 'numpy/'
-
-    # wavelength (int) [nm]
-    ceil_lambda_nm = 905
+    npysavedir = datadir + 'npy/'
 
     # # 12 clear days for the 2008 KSK15S pair
     # daystrList = ['20080208', '20080209', '20080210', '20080211', '20080217', '20080506', '20080507', '20080508',
@@ -115,24 +218,30 @@ if __name__ == '__main__':
     # daystrList = ['20080730']
 
     # 2018 clear sky days for LUMA network (missing cases between doy 142 and 190)
-    daystrList = ['20180418','20180419','20180420','20180505','20180506','20180507','20180514','20180515','20180519',
-                  '20180520','20180805','20180806','20180902','20180216','20180406']
+    daystrList = ['20180216', '20180406', '20180418', '20180419', '20180420',
+       '20180505', '20180506', '20180507', '20180514', '20180515',
+       '20180519', '20180520', '20180805', '20180806', '20180902']
 
     days_iterate = eu.dateList_to_datetime(daystrList)
     # [i.strftime('%Y%j') for i in days_iterate]
 
     # import all site names and heights
-    site_bsc = ceil.site_bsc
+    all_sites = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']
 
-    # main ceil to the statistics with
-    main_ceil_name = 'CL31-C_MR'
-    main_ceil = {main_ceil_name: site_bsc[main_ceil_name]}
+    main_ceil_name = 'CL31-A_IMU'
+    #main_ceil_name = 'CL31-B_RGS'
+    #main_ceil_name = 'CL31-C_MR'
+    #main_ceil_name = 'CL31-D_SWT'
+    #main_ceil_name = 'CL31-E_NK'
+    paired_sites = deepcopy(all_sites)
+    paired_sites.remove(main_ceil_name)
+
+    # main_ceil = {main_ceil_name: ceil.site_bsc[main_ceil_name]}
+    site_bsc = ceil.extract_sites(all_sites)
 
     # KSK15S pair
     # site_bsc = {'CL31-A_KSK15S': 40.5 - 31.4,
     #             'CL31-B_KSK15S': 40.5 - 31.4}
-
-    sites = site_bsc.keys()
 
     # min and max height to cut off backscatter (avoice clouds above BL, make sure all ceils start fairly from bottom)
     min_height = 0.0
@@ -148,7 +257,7 @@ if __name__ == '__main__':
     elif corr_type == 'height':
         axis = 1
 
-    # number of range gate to lower CBH height by, as Vaisala algorithm puts CBH inside the cloud
+    # number of range gate to lower CBH height by for the cloud removal, as Vaisala algorithm puts CBH inside the cloud
     cbh_lower_gates = 4
 
     # minimum number of pairs to have in a correlation
@@ -156,14 +265,14 @@ if __name__ == '__main__':
 
     # save?
     numpy_save = True
-    savestr = main_ceil_name + '_statistics'
+    savestr = main_ceil_name + '_statistics.npy'
 
     # ==============================================================================
     # Read data
     # ==============================================================================
 
     # set up statistics dictionary
-    statistics = setup_statistics(corr_type)
+    statistics = setup_statistics(corr_type, paired_sites)
 
     for d, day in enumerate(days_iterate):
 
@@ -180,58 +289,88 @@ if __name__ == '__main__':
         # read in CLD
         cld_obs = ceil.read_all_ceils(day, site_bsc, ceilCLDDatadir, 'CLD', timeMatch=time_match)
 
-        # ==============================================================================
-        # Process
-        # ==============================================================================
+        # get list of all sites present this day, excluding the main site
+        paired_sites_today = deepcopy(bsc_obs.keys())
+        paired_sites_today.remove(main_ceil_name)
 
-        # process data before creating statistics
-        for site in bsc_obs.iterkeys():
+        # if the main ceil is present, then create statistics for it
+        if main_ceil_name in bsc_obs.keys():
 
-            # make all backscatter above the max_height allowed nan (e.g. all above 1500 m)
-            _, max_height_idx, _ = eu.nearest(bsc_obs[site]['height'], max_height)
-            bsc_obs[site]['backscatter'][:, max_height_idx+1:] = np.nan
+            # ==============================================================================
+            # Process
+            # ==============================================================================
 
-            # make all backscatter below a min_height allowed nan (e.g. all below 70 m so all
-            #   ceils start in the same place)
-            if min_height != 0.0:
-                _, min_height_idx, _ = eu.nearest(bsc_obs[site]['height'], min_height)
-                bsc_obs[site]['backscatter'][:, :min_height_idx+1] = np.nan
+            # process data before creating statistics
+            for site in bsc_obs.iterkeys():
 
-            # nan cloud effected backscatter points
-            bsc_obs[site]['backscatter'] = \
-                remove_cloud_effected_backscatter(cld_obs[site], 'CLD_Height_L1',  bsc_obs[site]['backscatter'],
-                                                  cbh_lower_gates, max_height)
+                # make all backscatter above the max_height allowed nan (e.g. all above 1500 m)
+                _, max_height_idx, _ = eu.nearest(bsc_obs[site]['height'], max_height)
+                bsc_obs[site]['backscatter'][:, max_height_idx+1:] = np.nan
 
-        if corr_type == 'time':
-            dimension = bsc_obs[sites[0]]['time']
-        elif corr_type == 'height':
-            dimension = bsc_obs[sites[0]]['height']
-        else:
-            raise ValueError('corr_type not time or height!')
+                # make all backscatter below a min_height allowed nan (e.g. all below 70 m so all
+                #   ceils start in the same place)
+                if min_height != 0.0:
+                    _, min_height_idx, _ = eu.nearest(bsc_obs[site]['height'], min_height)
+                    bsc_obs[site]['backscatter'][:, :min_height_idx+1] = np.nan
 
-        # carry out statistics on the profiles
-        for i, _ in enumerate(dimension):
+                # nan cloud effected backscatter points
+                bsc_obs[site]['backscatter'] = \
+                    remove_cloud_effected_backscatter(cld_obs[site], 'CLD_Height_L1',  bsc_obs[site]['backscatter'],
+                                                      cbh_lower_gates, max_height)
 
-            # extract out 1d arrays from each, either in time or height
-            x = np.take(bsc_obs[sites[0]]['backscatter'], i, axis=axis)
-            y = np.take(bsc_obs[sites[1]]['backscatter'], i, axis=axis)
+            for paired_site_i in paired_sites:
 
-            # mainly for the correlation functions which can misbehave when nans are involved...
-            finite_bool = np.isfinite(x) & np.isfinite(y)
+                # match heights from each ceilometer
+                # get unique pairs of paired ceilometer to the main ceilometer
+                x_hc_unique_pairs, y_hc_unique_pairs, \
+                x_unique_pairs_heights, y_unique_pairs_heights = \
+                    nearest_heights(bsc_obs[main_ceil_name]['height'], bsc_obs[paired_site_i]['height'], max_height)
 
-            # do stats
-            # stats_func = 1
+                # extract out all unique pairs below the upper height limit
+                # these are time and height matched now
+                main_ceil_backscatter = bsc_obs[main_ceil_name]['backscatter'][:, x_hc_unique_pairs]
+                pair_ceil_backscatter = bsc_obs[paired_site_i]['backscatter'][:, y_hc_unique_pairs]
+                x_height = bsc_obs[main_ceil_name]['height'][x_hc_unique_pairs]
 
-            # if the number of pairs to correlate is high enough ... correlate
-            if np.sum(finite_bool) >= min_corr_pairs:
+                # idx position of where to store the statistic.
+                #   time idx will simply be all the idx positions ([0, 1, ... len(time)])
+                #   height will be the extracted heights based on the height matching above
+                if corr_type == 'time':
+                    stat_store_idx = np.arange(len(bsc_obs[main_ceil_name]['time']))
+                elif corr_type == 'height':
+                    stat_store_idx = x_hc_unique_pairs
+                else:
+                    raise ValueError('corr_type not time or height!')
 
-                # spearman correlation
-                statistics['corr_rs'][i, d], statistics['corr_ps'][i, d] = \
-                    spearmanr(x[finite_bool], y[finite_bool])
+                # carry out statistics on the profiles
+                # for i, _ in enumerate(dimension):
+                for i, stat_store_idx_i in enumerate(stat_store_idx):
+
+                    # extract out 1d arrays from each, either in time or height
+                    x = np.take(main_ceil_backscatter, i, axis=axis)
+                    y = np.take(pair_ceil_backscatter, i, axis=axis)
+
+                    # # extract out 1d arrays from each, either in time or height
+                    # x = np.take(bsc_obs[main_ceil_name]['backscatter'], i, axis=axis)
+                    # y = np.take(bsc_obs[paired_site_i]['backscatter'], i, axis=axis)
+
+                    # mainly for the correlation functions which can misbehave when nans are involved...
+                    finite_bool = np.isfinite(x) & np.isfinite(y)
+
+                    # do stats
+                    # stats_func = 1
+
+                    # if the number of pairs to correlate is high enough ... correlate
+                    if np.sum(finite_bool) >= min_corr_pairs:
+
+                        # spearman correlation
+                        statistics[paired_site_i]['corr_rs'][stat_store_idx_i, d], \
+                        statistics[paired_site_i]['corr_ps'][stat_store_idx_i, d] = \
+                            spearmanr(x[finite_bool], y[finite_bool])
 
     # save statistics in numpy array
     if numpy_save == True:
-        save_dict = {'statistics': statistics, 'cases': days_iterate, 'sites': sites, 'main_ceil': main_ceil}
+        save_dict = {'statistics': statistics, 'cases': days_iterate, 'site_bsc': site_bsc, 'main_ceil_name': main_ceil_name}
         np.save(npysavedir + savestr, save_dict)
         print 'data saved!: ' + npysavedir + savestr
 
@@ -239,51 +378,79 @@ if __name__ == '__main__':
     # Plotting
     # ==============================================================================
 
-    # plt.plot(bsc_obs[sites[0]]['backscatter'][finite_bool, h], label=sites[0])
-    # plt.plot(bsc_obs[sites[1]]['backscatter'][finite_bool, h], label=sites[1])
-    # plt.legend()
-    # plt.suptitle(bsc_obs[sites[0]]['time'][0].strftime('%d/%m/%Y') + ' - DOY:' + bsc_obs[sites[0]]['time'][0].strftime('%j') +'; h='+str(bsc_obs[sites[0]]['height'][h])+'m')
-    #
-    # idx = np.array([all(np.isfinite(row)) for row in corr_rs])
-    med_rs = np.nanmedian(corr_rs, axis=1)
-    pct25_rs = np.nanpercentile(corr_rs, 25, axis=1)
-    pct75_rs = np.nanpercentile(corr_rs, 75, axis=1)
 
-
-    if corr_type == 'time':
+    if corr_type == 'height':
 
         fig = plt.figure()
         ax = plt.gca()
-        plt.plot_date(time_match, med_rs, '-',label='mean')
-        ax.fill_between(time_match, pct25_rs, pct75_rs, alpha=0.2)
-        plt.axhline(1.0, linestyle='--', color='black')
+        height = bsc_obs[main_ceil_name]['height']
 
-        plt.xlim([time_match[0], time_match[-1]])
-        plt.ylabel('Spearman r')
-        plt.xlabel('time [HH:MM]')
-        ax.xaxis.set_major_formatter(DateFormatter('%H:%M'))
-        plt.suptitle(sites[0] + '_' + sites[1] +'; '+str(len(daystrList))+' days; 15sec')
+        for paired_site_i in paired_sites:
 
-        plt.savefig(savedir + sites[0] + '_' + sites[1] + '_spearmanr_time_cldexclude.png')
+            corr_rs = statistics[paired_site_i]['corr_rs']
 
-    elif corr_type == 'height':
+            idx = np.array([all(np.isfinite(row)) for row in corr_rs])
+            med_rs = np.nanmedian(corr_rs, axis=1)
+            pct25_rs = np.nanpercentile(corr_rs, 25, axis=1)
+            pct75_rs = np.nanpercentile(corr_rs, 75, axis=1)
 
-        idx = np.array([all(np.isfinite(row)) for row in corr_rs])
-
-        fig = plt.figure()
-        ax = plt.gca()
-        height = bsc_obs[site]['height']
-        plt.plot(height[idx], med_rs[idx], '-', label='mean')
-        ax.fill_between(height[idx], pct25_rs[idx], pct75_rs[idx], alpha=0.2)
-        # plt.axhline(1.0, linestyle='--', color='black')
+            plt.plot(height[idx], med_rs[idx], '-', label=paired_site_i)
+            ax.fill_between(height[idx], pct25_rs[idx], pct75_rs[idx], alpha=0.2)
+            # plt.axhline(1.0, linestyle='--', color='black')
 
         # plt.xlim([time_match[0], time_match[-1]])
         plt.ylabel('Spearman r')
         plt.xlabel('height [m]')
+        plt.ylim([0.0, 1.05])
+        plt.legend()
         # ax.xaxis.set_major_formatter(DateFormatter('%H:%M'))
-        plt.suptitle(sites[0] + '_' + sites[1] + '; ' + str(len(daystrList)) + ' days; 15sec')
+        plt.suptitle(main_ceil_name+ '; ' + str(len(daystrList)) + ' days; 15sec')
+        plt.savefig(savedir + main_ceil_name +'_spearmanr_height.png')
 
-        plt.savefig(savedir + sites[0] + '_' + sites[1] + '_spearmanr_height_cldexclude.png')
+
+    # ----------------------------------
+
+    # # KSK15S pair
+    #
+    # # idx = np.array([all(np.isfinite(row)) for row in corr_rs])
+    # med_rs = np.nanmedian(corr_rs, axis=1)
+    # pct25_rs = np.nanpercentile(corr_rs, 25, axis=1)
+    # pct75_rs = np.nanpercentile(corr_rs, 75, axis=1)
+    #
+    # if corr_type == 'time':
+    #
+    #     fig = plt.figure()
+    #     ax = plt.gca()
+    #     plt.plot_date(time_match, med_rs, '-',label='mean')
+    #     ax.fill_between(time_match, pct25_rs, pct75_rs, alpha=0.2)
+    #     plt.axhline(1.0, linestyle='--', color='black')
+    #
+    #     plt.xlim([time_match[0], time_match[-1]])
+    #     plt.ylabel('Spearman r')
+    #     plt.xlabel('time [HH:MM]')
+    #     ax.xaxis.set_major_formatter(DateFormatter('%H:%M'))
+    #     plt.suptitle(sites[0] + '_' + sites[1] +'; '+str(len(daystrList))+' days; 15sec')
+    #
+    #     plt.savefig(savedir + sites[0] + '_' + sites[1] + '_spearmanr_time_cldexclude.png')
+    #
+    # elif corr_type == 'height':
+    #
+    #     idx = np.array([all(np.isfinite(row)) for row in corr_rs])
+    #
+    #     fig = plt.figure()
+    #     ax = plt.gca()
+    #     height = bsc_obs[site]['height']
+    #     plt.plot(height[idx], med_rs[idx], '-', label='mean')
+    #     ax.fill_between(height[idx], pct25_rs[idx], pct75_rs[idx], alpha=0.2)
+    #     # plt.axhline(1.0, linestyle='--', color='black')
+    #
+    #     # plt.xlim([time_match[0], time_match[-1]])
+    #     plt.ylabel('Spearman r')
+    #     plt.xlabel('height [m]')
+    #     # ax.xaxis.set_major_formatter(DateFormatter('%H:%M'))
+    #     plt.suptitle(sites[0] + '_' + sites[1] + '; ' + str(len(daystrList)) + ' days; 15sec')
+    #
+    #     plt.savefig(savedir + sites[0] + '_' + sites[1] + '_spearmanr_height_cldexclude.png')
 
 
     print 'END PROGRAM'
