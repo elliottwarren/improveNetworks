@@ -33,106 +33,108 @@ if __name__ == '__main__':
     #main_ceil_name = 'CL31-A_IMU'
     #main_ceil_name = 'CL31-B_RGS'
     #main_ceil_name = 'CL31-C_MR'
-    main_ceil_name = 'CL31-D_SWT'
+    #main_ceil_name = 'CL31-D_SWT'
     #main_ceil_name = 'CL31-E_NK'
 
-    # ------------------
+    for main_ceil_name in ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']:
 
-    # directories
-    maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-    datadir = maindir + 'data/'
-    savedir = maindir + 'figures/obs_intercomparison/'
-    npysavedir = datadir + 'npy/'
+        # ------------------
 
-    # # 12 clear days for the 2008 KSK15S pair
-    # daystrList = ['20080208', '20080209', '20080210', '20080211', '20080217', '20080506', '20080507', '20080508',
-    #               '20080510', '20080511', '20080512', '20080730']
+        # directories
+        maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
+        datadir = maindir + 'data/'
+        savedir = maindir + 'figures/obs_intercomparison/'
+        npysavedir = datadir + 'npy/'
 
-    # test partial cloud day KSK15S
-    # daystrList = ['20080730']
+        # # 12 clear days for the 2008 KSK15S pair
+        # daystrList = ['20080208', '20080209', '20080210', '20080211', '20080217', '20080506', '20080507', '20080508',
+        #               '20080510', '20080511', '20080512', '20080730']
 
-    # 2018 clear sky days for LUMA network (missing cases between doy 142 and 190)
-    daystrList = ['20180216', '20180406', '20180418', '20180419', '20180420',
-       '20180505', '20180506', '20180507', '20180514', '20180515',
-       '20180519', '20180520', '20180805', '20180806', '20180902']
+        # test partial cloud day KSK15S
+        # daystrList = ['20080730']
 
-    days_iterate = eu.dateList_to_datetime(daystrList)
-    # [i.strftime('%Y%j') for i in days_iterate]
+        # 2018 clear sky days for LUMA network (missing cases between doy 142 and 190)
+        daystrList = ['20180216', '20180406', '20180418', '20180419', '20180420',
+           '20180505', '20180506', '20180507', '20180514', '20180515',
+           '20180519', '20180520', '20180805', '20180806', '20180902']
 
-    # import all site names and heights
-    all_sites = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']
+        days_iterate = eu.dateList_to_datetime(daystrList)
+        # [i.strftime('%Y%j') for i in days_iterate]
 
-    paired_sites = deepcopy(all_sites)
-    paired_sites.remove(main_ceil_name)
+        # import all site names and heights
+        all_sites = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']
 
-    # main_ceil = {main_ceil_name: ceil.site_bsc[main_ceil_name]}
-    site_bsc = ceil.extract_sites(all_sites)
+        paired_sites = deepcopy(all_sites)
+        paired_sites.remove(main_ceil_name)
 
-    # KSK15S pair
-    # site_bsc = {'CL31-A_KSK15S': 40.5 - 31.4,
-    #             'CL31-B_KSK15S': 40.5 - 31.4}
+        # main_ceil = {main_ceil_name: ceil.site_bsc[main_ceil_name]}
+        site_bsc = ceil.extract_sites(all_sites)
 
-    # save info?
-    savestr = main_ceil_name + '_statistics.npy'
+        # KSK15S pair
+        # site_bsc = {'CL31-A_KSK15S': 40.5 - 31.4,
+        #             'CL31-B_KSK15S': 40.5 - 31.4}
 
-    print 'main ceilometer: ' + corr_type + '_' +main_ceil_name
+        # save info?
+        savestr = main_ceil_name + '_' + corr_type + '_statistics.npy'
 
-    # ==============================================================================
-    # Read data
-    # ==============================================================================
+        print 'main ceilometer: ' + corr_type + '_' +main_ceil_name
 
-    data = np.load(npysavedir + savestr).flat[0]
-    statistics = data['statistics']
-    site_bsc = data['site_bsc']
+        # ==============================================================================
+        # Read data
+        # ==============================================================================
 
-    # temporarily use these at the height of the ceilometers
-    heights = {site: np.arange(site_bsc[site] + 10.0, site_bsc[site] + 10.0 + (10.0 * 770), 10.0) for site in site_bsc}
+        data = np.load(npysavedir + savestr).flat[0]
+        statistics = data['statistics']
+        site_bsc = data['site_bsc']
 
-
-    # array of times that would align with the time statistics
-    #   can use ANY year, month and day - as we just want the seconds and hours to be right
-    start = dt.datetime(2000, 2, 1, 0, 0, 0)
-    end = start + dt.timedelta(days=1)
-    time_match = eu.date_range(start, end, 15, 'seconds')
-
-    # ==============================================================================
-    # plot data
-    # ==============================================================================
-
-    # plotting details
-    if corr_type == 'time':
-        x_axis = time_match
-        x_label = 'height [m]'
-    elif corr_type == 'height':
-        x_axis = heights[main_ceil_name]
-        x_label = 'time [HH:MM]'
-
-    fig = plt.figure()
-    ax = plt.gca()
-
-    for paired_site_i in paired_sites:
-
-        # line colour to match ceilometer
-        split = paired_site_i.split('_')[-1]
-        colour = ceil.site_bsc_colours[split]
-
-        corr_rs = statistics[paired_site_i]['corr_rs']
-
-        idx = np.array([any(np.isfinite(row)) for row in corr_rs])
-        med_rs = np.nanmedian(corr_rs, axis=1)
-        pct25_rs = np.nanpercentile(corr_rs, 25, axis=1)
-        pct75_rs = np.nanpercentile(corr_rs, 75, axis=1)
-
-        plt.plot(x_axis[idx], med_rs[idx], '-', color=colour, label=paired_site_i)
-        ax.fill_between(x_axis[idx], pct25_rs[idx], pct75_rs[idx], facecolor=colour, alpha=0.2)
+        # temporarily use these at the height of the ceilometers until the height is saved with each .npy file
+        heights = {site: np.arange(site_bsc[site] + 10.0, site_bsc[site] + 10.0 + (10.0 * 770), 10.0) for site in site_bsc}
 
 
-    # plt.xlim([time_match[0], time_match[-1]])
-    plt.ylabel('Spearman r')
-    plt.xlabel(x_label)
-    plt.ylim([0.0, 1.05])
-    plt.legend()
-    if corr_type == 'time':
-        ax.xaxis.set_major_formatter(DateFormatter('%H:%M'))
-    plt.suptitle(main_ceil_name+ '; ' + str(len(daystrList)) + ' days; 15sec')
-    plt.savefig(savedir + main_ceil_name +'_spearmanr_'+corr_type+'.png')
+        # array of times that would align with the time statistics
+        #   can use ANY year, month and day - as we just want the seconds and hours to be right
+        start = dt.datetime(2000, 2, 1, 0, 0, 0)
+        end = start + dt.timedelta(days=1)
+        time_match = eu.date_range(start, end, 15, 'seconds')
+
+        # ==============================================================================
+        # plot data
+        # ==============================================================================
+
+        # plotting details
+        if corr_type == 'time':
+            x_axis = time_match
+            x_label = 'height [m]'
+        elif corr_type == 'height':
+            x_axis = heights[main_ceil_name]
+            x_label = 'time [HH:MM]'
+
+        fig = plt.figure()
+        ax = plt.gca()
+
+        for paired_site_i in paired_sites:
+
+            # line colour to match ceilometer
+            split = paired_site_i.split('_')[-1]
+            colour = ceil.site_bsc_colours[split]
+
+            corr_rs = statistics[paired_site_i]['corr_rs']
+
+            idx = np.array([any(np.isfinite(row)) for row in corr_rs])
+            med_rs = np.nanmedian(corr_rs, axis=1)
+            pct25_rs = np.nanpercentile(corr_rs, 25, axis=1)
+            pct75_rs = np.nanpercentile(corr_rs, 75, axis=1)
+
+            plt.plot(x_axis[idx], med_rs[idx], '-', color=colour, label=paired_site_i)
+            ax.fill_between(x_axis[idx], pct25_rs[idx], pct75_rs[idx], facecolor=colour, alpha=0.2)
+
+
+        # plt.xlim([time_match[0], time_match[-1]])
+        plt.ylabel('Spearman r')
+        plt.xlabel(x_label)
+        plt.ylim([0.0, 1.05])
+        plt.legend()
+        if corr_type == 'time':
+            ax.xaxis.set_major_formatter(DateFormatter('%H:%M'))
+        plt.suptitle(main_ceil_name+ '; ' + str(len(daystrList)) + ' days; 15sec')
+        plt.savefig(savedir + main_ceil_name +'_spearmanr_'+corr_type+'.png')
