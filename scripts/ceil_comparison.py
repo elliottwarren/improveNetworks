@@ -29,7 +29,7 @@ def setup_statistics(corr_type, paired_sites):
     # which variable will the statistics be carried out in (time or height?) - make array correct shape
     if corr_type == 'time':
         dim_length = 5761
-    if corr_type == 'height':
+    elif corr_type == 'height':
         dim_length = 770
     else:
         raise ValueError('corr_type not set as time or height!')
@@ -201,6 +201,26 @@ if __name__ == '__main__':
     # Setup
     # ==============================================================================
 
+    # --- User changes
+
+    # correlate in height or in time?
+    corr_type = 'time'
+
+    #main_ceil_name = 'CL31-A_IMU'
+    #main_ceil_name = 'CL31-B_RGS'
+    #main_ceil_name = 'CL31-C_MR'
+    #main_ceil_name = 'CL31-D_SWT'
+    main_ceil_name = 'CL31-E_NK'
+
+    # min and max height to cut off backscatter (avoice clouds above BL, make sure all ceils start fairly from bottom)
+    min_height = 0.0
+    max_height = 2000.0
+
+    # save?
+    numpy_save = True
+
+    # ------------------
+
     # directories
     maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
     datadir = maindir + 'data/'
@@ -228,11 +248,6 @@ if __name__ == '__main__':
     # import all site names and heights
     all_sites = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']
 
-    main_ceil_name = 'CL31-A_IMU'
-    #main_ceil_name = 'CL31-B_RGS'
-    #main_ceil_name = 'CL31-C_MR'
-    #main_ceil_name = 'CL31-D_SWT'
-    #main_ceil_name = 'CL31-E_NK'
     paired_sites = deepcopy(all_sites)
     paired_sites.remove(main_ceil_name)
 
@@ -243,17 +258,10 @@ if __name__ == '__main__':
     # site_bsc = {'CL31-A_KSK15S': 40.5 - 31.4,
     #             'CL31-B_KSK15S': 40.5 - 31.4}
 
-    # min and max height to cut off backscatter (avoice clouds above BL, make sure all ceils start fairly from bottom)
-    min_height = 0.0
-    max_height = 2000.0
-
-    # correlate in height or in time?
-    corr_type = 'height'
-
     # which axis of backscatter to slice into based on corr_type
     print 'corr_type = ' + corr_type
     if corr_type == 'time':
-        axis = 1
+        axis = 0
     elif corr_type == 'height':
         axis = 1
 
@@ -263,9 +271,10 @@ if __name__ == '__main__':
     # minimum number of pairs to have in a correlation
     min_corr_pairs = 6
 
-    # save?
-    numpy_save = True
+    # save info?
     savestr = main_ceil_name + '_statistics.npy'
+
+    print 'main ceilometer: ' + corr_type + '_' +main_ceil_name
 
     # ==============================================================================
     # Read data
@@ -379,33 +388,45 @@ if __name__ == '__main__':
     # ==============================================================================
 
 
-    if corr_type == 'height':
+    # plotting details
+    if corr_type == 'time':
+        x_axis = time_match
+        x_label = 'height [m]'
+    elif corr_type == 'height':
+        x_axis = bsc_obs[main_ceil_name]['height']
+        x_label = 'time [HH:MM]'
 
-        fig = plt.figure()
-        ax = plt.gca()
-        height = bsc_obs[main_ceil_name]['height']
 
-        for paired_site_i in paired_sites:
+    fig = plt.figure()
+    ax = plt.gca()
 
-            corr_rs = statistics[paired_site_i]['corr_rs']
+    for paired_site_i in paired_sites:
 
-            idx = np.array([all(np.isfinite(row)) for row in corr_rs])
-            med_rs = np.nanmedian(corr_rs, axis=1)
-            pct25_rs = np.nanpercentile(corr_rs, 25, axis=1)
-            pct75_rs = np.nanpercentile(corr_rs, 75, axis=1)
+        # line colour to match ceilometer
+        split = paired_site_i.split('_')[-1]
+        colour = ceil.site_bsc_colours[split]
 
-            plt.plot(height[idx], med_rs[idx], '-', label=paired_site_i)
-            ax.fill_between(height[idx], pct25_rs[idx], pct75_rs[idx], alpha=0.2)
-            # plt.axhline(1.0, linestyle='--', color='black')
+        corr_rs = statistics[paired_site_i]['corr_rs']
 
-        # plt.xlim([time_match[0], time_match[-1]])
-        plt.ylabel('Spearman r')
-        plt.xlabel('height [m]')
-        plt.ylim([0.0, 1.05])
-        plt.legend()
-        # ax.xaxis.set_major_formatter(DateFormatter('%H:%M'))
-        plt.suptitle(main_ceil_name+ '; ' + str(len(daystrList)) + ' days; 15sec')
-        plt.savefig(savedir + main_ceil_name +'_spearmanr_height.png')
+        idx = np.array([all(np.isfinite(row)) for row in corr_rs])
+        med_rs = np.nanmedian(corr_rs, axis=1)
+        pct25_rs = np.nanpercentile(corr_rs, 25, axis=1)
+        pct75_rs = np.nanpercentile(corr_rs, 75, axis=1)
+
+        plt.plot(x_axis[idx], med_rs[idx], '-', color=colour, label=paired_site_i)
+        ax.fill_between(x_axis[idx], pct25_rs[idx], pct75_rs[idx], alpha=0.2)
+        # plt.axhline(1.0, linestyle='--', color='black')
+
+
+    # plt.xlim([time_match[0], time_match[-1]])
+    plt.ylabel('Spearman r')
+    plt.xlabel(x_label)
+    plt.ylim([0.0, 1.05])
+    plt.legend()
+    if corr_type == 'time':
+        ax.xaxis.set_major_formatter(DateFormatter('%H:%M'))
+    plt.suptitle(main_ceil_name+ '; ' + str(len(daystrList)) + ' days; 15sec')
+    plt.savefig(savedir + main_ceil_name +'_spearmanr_'+corr_type+'.png')
 
 
     # ----------------------------------
