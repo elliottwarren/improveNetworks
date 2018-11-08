@@ -34,12 +34,16 @@ def setup_statistics(corr_type, paired_sites):
     else:
         raise ValueError('corr_type not set as time or height!')
 
+    # what statistics to include?
+    stat_list = ['corr_rs', 'corr_ps', # Spearman correlation r and p values
+                 'n'] # sample size for each statistic
+
     # set up empty arrays filled with nans
     # statistics dict -> site -> actual statistics e.g. correlation
     statistics = {}
     for site_i in paired_sites:
         statistics[site_i] = {}
-        for var in ['corr_rs', 'corr_ps']:
+        for var in stat_list:
             statistics[site_i][var] = np.empty((dim_length, len(daystrList)))
             statistics[site_i][var][:] = np.nan
 
@@ -203,14 +207,14 @@ if __name__ == '__main__':
 
     # --- User changes
 
-    # correlate in height or in time?
-    corr_type = 'time'
+    # correlate in 'height' or in 'time'?
+    corr_type = 'height'
 
-    #main_ceil_name = 'CL31-A_IMU'
+    main_ceil_name = 'CL31-A_IMU'
     #main_ceil_name = 'CL31-B_RGS'
     #main_ceil_name = 'CL31-C_MR'
     #main_ceil_name = 'CL31-D_SWT'
-    main_ceil_name = 'CL31-E_NK'
+    #main_ceil_name = 'CL31-E_NK'
 
     # min and max height to cut off backscatter (avoice clouds above BL, make sure all ceils start fairly from bottom)
     min_height = 0.0
@@ -237,10 +241,10 @@ if __name__ == '__main__':
     # test partial cloud day KSK15S
     # daystrList = ['20080730']
 
-    # 2018 clear sky days for LUMA network (missing cases between doy 142 and 190)
+    # # 2018 clear sky days for LUMA network (missing cases between doy 142 and 190)
     daystrList = ['20180216', '20180406', '20180418', '20180419', '20180420',
-       '20180505', '20180506', '20180507', '20180514', '20180515',
-       '20180519', '20180520', '20180805', '20180806', '20180902']
+        '20180505', '20180506', '20180507', '20180514', '20180515',
+        '20180519', '20180520', '20180805', '20180806', '20180902']
 
     days_iterate = eu.dateList_to_datetime(daystrList)
     # [i.strftime('%Y%j') for i in days_iterate]
@@ -272,7 +276,7 @@ if __name__ == '__main__':
     min_corr_pairs = 6
 
     # save info?
-    savestr = main_ceil_name + '_statistics.npy'
+    savestr = main_ceil_name + '_' + corr_type + '_statistics.npy'
 
     print 'main ceilometer: ' + corr_type + '_' +main_ceil_name
 
@@ -369,6 +373,8 @@ if __name__ == '__main__':
                     # do stats
                     # stats_func = 1
 
+                    statistics[paired_site_i]['corr_rs'][stat_store_idx_i, d] = np.sum(finite_bool)
+
                     # if the number of pairs to correlate is high enough ... correlate
                     if np.sum(finite_bool) >= min_corr_pairs:
 
@@ -379,7 +385,8 @@ if __name__ == '__main__':
 
     # save statistics in numpy array
     if numpy_save == True:
-        save_dict = {'statistics': statistics, 'cases': days_iterate, 'site_bsc': site_bsc, 'main_ceil_name': main_ceil_name}
+        save_dict = {'statistics': statistics, 'cases': days_iterate, 'site_bsc': site_bsc, 'main_ceil_name': main_ceil_name,
+                     'height': bsc_obs[main_ceil_name]['height']}
         np.save(npysavedir + savestr, save_dict)
         print 'data saved!: ' + npysavedir + savestr
 
@@ -387,15 +394,13 @@ if __name__ == '__main__':
     # Plotting
     # ==============================================================================
 
-
     # plotting details
     if corr_type == 'time':
         x_axis = time_match
-        x_label = 'height [m]'
+        x_label = 'time [HH:MM]'
     elif corr_type == 'height':
         x_axis = bsc_obs[main_ceil_name]['height']
-        x_label = 'time [HH:MM]'
-
+        x_label = 'height [m]'
 
     fig = plt.figure()
     ax = plt.gca()
@@ -414,7 +419,7 @@ if __name__ == '__main__':
         pct75_rs = np.nanpercentile(corr_rs, 75, axis=1)
 
         plt.plot(x_axis[idx], med_rs[idx], '-', color=colour, label=paired_site_i)
-        ax.fill_between(x_axis[idx], pct25_rs[idx], pct75_rs[idx], alpha=0.2)
+        ax.fill_between(x_axis[idx], pct25_rs[idx], pct75_rs[idx], facecolor=colour, alpha=0.2)
         # plt.axhline(1.0, linestyle='--', color='black')
 
 
