@@ -36,6 +36,7 @@ def setup_statistics(corr_type, paired_sites):
 
     # what statistics to include?
     stat_list = ['corr_rs', 'corr_ps', # Spearman correlation r and p values
+                 'diff',
                  'n'] # sample size for each statistic
 
     # set up empty arrays filled with nans
@@ -210,11 +211,11 @@ if __name__ == '__main__':
     # correlate in 'height' or in 'time'?
     corr_type = 'height'
 
-    #main_ceil_name = 'CL31-A_IMU'
+    main_ceil_name = 'CL31-A_IMU'
     #main_ceil_name = 'CL31-B_RGS'
     #main_ceil_name = 'CL31-C_MR'
     #main_ceil_name = 'CL31-D_SWT'
-    main_ceil_name = 'CL31-E_NK'
+    #main_ceil_name = 'CL31-E_NK'
 
     # min and max height to cut off backscatter (avoice clouds above BL, make sure all ceils start fairly from bottom)
     min_height = 0.0
@@ -252,11 +253,12 @@ if __name__ == '__main__':
     # import all site names and heights
     all_sites = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']
 
+    # all ceilometers excluding the main_ceilometer. These will be paired with the main ceilometer, one at a time.
     paired_sites = deepcopy(all_sites)
     paired_sites.remove(main_ceil_name)
 
-    # main_ceil = {main_ceil_name: ceil.site_bsc[main_ceil_name]}
-    site_bsc = ceil.extract_sites(all_sites)
+    # get height information for all the sites
+    site_bsc = ceil.extract_sites(all_sites, height_type='agl')
 
     # KSK15S pair
     # site_bsc = {'CL31-A_KSK15S': 40.5 - 31.4,
@@ -289,7 +291,7 @@ if __name__ == '__main__':
 
     for d, day in enumerate(days_iterate):
 
-        print 'day = ' + day.strftime('%Y-%m-%d')
+        print 'day = ' + day.strftime('%Y-%m-%d (%j)')
 
         # times to match to, so the time between days will line up
         start = dt.datetime(day.year, day.month, day.day, 0, 0, 0)
@@ -297,10 +299,13 @@ if __name__ == '__main__':
         time_match = eu.date_range(start, end, 15, 'seconds')
 
         # read all bsc obs for this day
-        bsc_obs = ceil.read_all_ceils_BSC(day, site_bsc, ceilDatadir, calib=False, timeMatch=time_match)
+        bsc_obs = ceil.read_all_ceils_BSC(day, site_bsc, ceilDatadir, calib=True, timeMatch=time_match, var_type='beta_tR')
 
         # read in CLD
         cld_obs = ceil.read_all_ceils(day, site_bsc, ceilCLDDatadir, 'CLD', timeMatch=time_match)
+
+        # read in MLH
+        mlh_obs = ceil.read_all_ceils(day, site_bsc, ceilDatadir, 'MLH', timeMatch=time_match)
 
         # get list of all sites present this day, excluding the main site
         paired_sites_today = deepcopy(bsc_obs.keys())
@@ -316,20 +321,28 @@ if __name__ == '__main__':
             # process data before creating statistics
             for site in bsc_obs.iterkeys():
 
-                # make all backscatter above the max_height allowed nan (e.g. all above 1500 m)
+                # 1. make all backscatter above the max_height allowed nan (e.g. all above 1500 m)
                 _, max_height_idx, _ = eu.nearest(bsc_obs[site]['height'], max_height)
                 bsc_obs[site]['backscatter'][:, max_height_idx+1:] = np.nan
 
-                # make all backscatter below a min_height allowed nan (e.g. all below 70 m so all
+                # 2. make all backscatter below a min_height allowed nan (e.g. all below 70 m so all
                 #   ceils start in the same place)
                 if min_height != 0.0:
                     _, min_height_idx, _ = eu.nearest(bsc_obs[site]['height'], min_height)
                     bsc_obs[site]['backscatter'][:, :min_height_idx+1] = np.nan
 
-                # nan cloud effected backscatter points
+                # 3. nan cloud effected backscatter points
                 bsc_obs[site]['backscatter'] = \
                     remove_cloud_effected_backscatter(cld_obs[site], 'CLD_Height_L1',  bsc_obs[site]['backscatter'],
                                                       cbh_lower_gates, max_height)
+
+                # 4. nan above the mixing layer height using the MLH data
+                # ToDo change this to be a mixing height OR residual layer. Not just the mixing height.
+                for i, mlh_i in enumerate(mlh_obs[site]['MH']):
+                    _, mlh_height_idx, _ = eu.nearest(bsc_obs[site]['height'], mlh_i)
+                    # nan all backscatter above this level
+                    bsc_obs[site]['backscatter'][i, mlh_height_idx:] = np.nan
+
 
             for paired_site_i in paired_sites:
 
@@ -372,8 +385,8 @@ if __name__ == '__main__':
 
                     # do stats
                     # stats_func = 1
-
-                    statistics[paired_site_i]['corr_rs'][stat_store_idx_i, d] = np.sum(finite_bool)
+                    # store sample size
+                    statistics[paired_site_i]['n'][stat_store_idx_i, d] = np.sum(finite_bool)
 
                     # if the number of pairs to correlate is high enough ... correlate
                     if np.sum(finite_bool) >= min_corr_pairs:
