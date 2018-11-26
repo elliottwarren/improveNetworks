@@ -5,18 +5,13 @@ Created by Elliott Tues 23rd Oct '18
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.stats import spearmanr
 from scipy.stats import pearsonr
 import datetime as dt
-from matplotlib.ticker import FormatStrFormatter
-from matplotlib.dates import DateFormatter
 from copy import deepcopy
 
-import ellUtils as eu
-from forward_operator import FOUtils as FO
-from forward_operator import FOconstants as FOcon
-import ceilUtils as ceil
+from ellUtils import ellUtils as eu
+from ceilUtils import ceilUtils as ceil
 
 
 def setup_statistics(corr_type, paired_sites):
@@ -36,7 +31,8 @@ def setup_statistics(corr_type, paired_sites):
 
     # what statistics to include?
     stat_list = ['corr_rs', 'corr_ps', # Spearman correlation r and p values
-                 'diff',
+                 'mean_diff',
+                 'median_diff',
                  'n'] # sample size for each statistic
 
     # set up empty arrays filled with nans
@@ -211,8 +207,8 @@ if __name__ == '__main__':
     # correlate in 'height' or in 'time'?
     corr_type = 'height'
 
-    main_ceil_name = 'CL31-A_IMU'
-    #main_ceil_name = 'CL31-B_RGS'
+    #main_ceil_name = 'CL31-A_IMU'
+    main_ceil_name = 'CL31-B_RGS'
     #main_ceil_name = 'CL31-C_MR'
     #main_ceil_name = 'CL31-D_SWT'
     #main_ceil_name = 'CL31-E_NK'
@@ -387,6 +383,10 @@ if __name__ == '__main__':
                     # stats_func = 1
                     # store sample size
                     statistics[paired_site_i]['n'][stat_store_idx_i, d] = np.sum(finite_bool)
+                    statistics[paired_site_i]['mean_diff'][stat_store_idx_i, d] = \
+                        np.nanmean(x[finite_bool] - y[finite_bool])
+                    statistics[paired_site_i]['median_diff'][stat_store_idx_i, d] = \
+                        np.nanmedian(x[finite_bool] - y[finite_bool])
 
                     # if the number of pairs to correlate is high enough ... correlate
                     if np.sum(finite_bool) >= min_corr_pairs:
