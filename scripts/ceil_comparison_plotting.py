@@ -8,17 +8,13 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib import cm
-from scipy.stats import spearmanr
-from scipy.stats import pearsonr
 import datetime as dt
 from matplotlib.ticker import FormatStrFormatter
 from matplotlib.dates import DateFormatter
 from copy import deepcopy
 
-import ellUtils as eu
-from forward_operator import FOUtils as FO
-from forward_operator import FOconstants as FOcon
-import ceilUtils as ceil
+import ellUtils.ellUtils as eu
+import ceilUtils.ceilUtils as ceil
 
 
 if __name__ == '__main__':
@@ -29,8 +25,8 @@ if __name__ == '__main__':
 
     # --- User changes
 
-    # correlate in height or in time?
-    corr_type = 'height'
+    # independent variable height or in time?
+    ind_var = 'height'
 
     ceil_list = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']
     #ceil_list = ['CL31-A_IMU']
@@ -78,15 +74,15 @@ if __name__ == '__main__':
         #             'CL31-B_KSK15S': 40.5 - 31.4}
 
         # save info?
-        savestr = main_ceil_name + '_' + corr_type + '_statistics.npy'
+        filename = main_ceil_name + '_' + ind_var + '_statistics.npy'
 
-        print 'main ceilometer: ' + corr_type + '_' + main_ceil_name
+        print 'main ceilometer: ' + ind_var + '_' + main_ceil_name
 
         # ==============================================================================
         # Read data
         # ==============================================================================
 
-        data = np.load(npysavedir + savestr).flat[0]
+        data = np.load(npysavedir + filename).flat[0]
         statistics = data['statistics']
         site_bsc = data['site_bsc']
 
@@ -108,23 +104,35 @@ if __name__ == '__main__':
         # median and IQR corr plot (all cases together)
 
         # plotting details
-        if corr_type == 'time':
+        if ind_var == 'time':
             x_axis = time_match
-            x_label = 'height [m]'
-        elif corr_type == 'height':
-            x_axis = heights[main_ceil_name]
             x_label = 'time [HH:MM]'
+        elif ind_var == 'height':
+            x_axis = heights[main_ceil_name]
+            x_label = 'height [m]'
+            x_lim = [0.0, 2000.0]
+
+        # stat to plot (what is in the statistics dictionary) # corr_rs
+        stat_type = 'median_diff'
 
         fig = plt.figure()
         ax = plt.gca()
 
         for paired_site_i in paired_sites:
 
+            if stat_type == 'median_diff':
+                y_label = main_ceil_name + ' - ' + paired_site_i
+                # y_lim = [np.nanmin(statistics[paired_site_i][stat_type]),
+                #          np.nanmax(statistics[paired_site_i][stat_type])]
+            elif stat_type == 'corr_rs':
+                y_lim = [0.0, 1.05]
+                y_label = 'Spearman r'
+
             # line colour to match ceilometer
             split = paired_site_i.split('_')[-1]
             colour = ceil.site_bsc_colours[split]
 
-            corr_rs = statistics[paired_site_i]['corr_rs']
+            corr_rs = statistics[paired_site_i][stat_type]
 
             idx = np.array([any(np.isfinite(row)) for row in corr_rs])
             med_rs = np.nanmedian(corr_rs, axis=1)
@@ -136,14 +144,16 @@ if __name__ == '__main__':
 
 
         # plt.xlim([time_match[0], time_match[-1]])
-        plt.ylabel('Spearman r')
+        #plt.xlim([0.0, 2000.0])
+        plt.ylabel(y_label)
         plt.xlabel(x_label)
-        plt.ylim([0.0, 1.05])
+        #plt.ylim([0.0, 1.05])
+        #plt.ylim(y_lim)
         plt.legend()
-        if corr_type == 'time':
+        if ind_var == 'time':
             ax.xaxis.set_major_formatter(DateFormatter('%H:%M'))
         plt.suptitle(main_ceil_name+ '; ' + str(len(daystrList)) + ' days; 15sec')
-        plt.savefig(savedir + main_ceil_name +'_spearmanr_'+corr_type+'.png')
+        plt.savefig(savedir + stat_type +'_'+main_ceil_name +'_'+ind_var+'.png')
 
         # # ---------------------------------
         # # corr in height - split up days. One plot per pairing. Each case as a seperate line
