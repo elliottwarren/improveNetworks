@@ -20,6 +20,72 @@ import ceilUtils.ceilUtils as ceil
 from forward_operator import FOUtils as FO
 from forward_operator import FOconstants as FOcon
 
+
+def calculate_corner_locations(coord):
+
+    """
+    Calculate the corner coordinates to match coord. corner[0,0] would be the bottom left corner for coord[0,0].
+
+    :param coord (2D array): either longitude or latitude coordinates
+    :return: corners (2D array with +1 size than coord, in each dimension): corner values for coord.
+
+    Bottom left corner is [0,0], top right is [-1,-1] ([row, col])
+
+    Examples ('.' are grid centre points, '-' and '|' are grid edges).
+
+    red outline (bot left)             blue outline of grid (top right
+                       [-1,-1]
+       ---------------------           ----b----------------
+       | . | . | . | . | . |           | . b . | . | . | . |
+       r r r r r r r r r ---           ----b----------------
+       | . | . | . | . r . |           | . b . | . | . | . |
+       ----------------r----           ----b----------------
+       | . | . | . | . r . |           | . b . | . | . | . |
+       ----------------r----           ----b-b-b-b-b-b-b-b-b
+       | . | . | . | . r . |           | . | . | . | . | . |
+       ----------------r----           ---------------------
+    [0,0]
+
+    """
+
+    # corner
+    corner = np.empty(np.array(coord.shape) + 1)
+    corner[:] = np.nan
+
+    # quadrant (sub sampled areas that exclude a row or column)
+    blue = coord[1:, 1:]  # top right
+    red = coord[:-1, :-1]  # bot left
+    black = coord[1:, :-1]  # top left
+    green = coord[:-1, 1:]  # bot right
+
+    # calculate bottom left corner values to match what is required by plt.pcolourmesh() X,Y parameters
+    # https://matplotlib.org/api/_as_gen/matplotlib.pyplot.pcolormesh.html
+
+    # 1. centre boxes (most of the corner values)
+    corner[1:-1, 1:-1] = red + ((blue - red) / 2.0)  # red +((blue - red)/2)
+
+    # 2. deal with outer edge cases...
+    # calculate the 2D arrays, then extract out of it the edge cases Avoid overwriting values
+    #  as the original 'centre box' calculation above is more accurate for the centre boxes.
+
+    a = blue + ((blue - red) / 2.0)  # Side and corner
+    corner[-1, 2:] = a[-1, :]  # top centre and top right corner
+    corner[2:, -1] = a[:, -1]  # centre right side and rest of top right corner
+
+    b = red - ((blue - red) / 2.0)  # Side and corner
+    corner[:-2, 0] = b[:, 0]  # centre left side and bottom left corner
+    corner[0, :-2] = b[0, :]  # centre bottom side and rest of bottom left corner
+
+    c = green - ((black - green) / 2.0)  # corner only
+    corner[0, -2:] = c[0, -2:]  # just bottom right corner
+    corner[1, -1] = c[1, -1]  # rest of bottom right corner
+
+    c = black + ((black - green) / 2.0)  # corner only
+    corner[-2:, 0] = c[-2:, 0]  # just top left corner
+    corner[-1, 1] = c[-1, 1]  # rest of top left corner
+
+    return corner
+
 if __name__ == '__main__':
 
     # ==============================================================================
@@ -45,7 +111,7 @@ if __name__ == '__main__':
     maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
     datadir = maindir + 'data/'
     modDatadir = datadir + model_type + '/'
-    savedir = maindir + 'figures/obs_intercomparison/paired/'
+    savedir = maindir + 'figures/model_runs/'
     npysavedir = datadir + 'npy/'
 
     # test case from unused paper 2 UKV data
@@ -79,133 +145,12 @@ if __name__ == '__main__':
 
     #spec_mesh = np.meshgrid(mod_data['latitude'], mod_data['longitude'])
 
-    # calculate corners of grid, from their center positions
-    """   
-    examples ('.' are grid center points, '-' and '|' are grid edges)
-    red outline (bot left)     blue outline of grid (top right
-    ---------------------      ----b----------------
-    | . | . | . | . | . |      | . b . | . | . | . |
-    r r r r r r r r r ---      ----b----------------
-    | . | . | . | . r . |      | . b . | . | . | . |
-    ----------------r----      ----b----------------
-    | . | . | . | . r . |      | . b . | . | . | . |
-    ----------------r----      ----b-b-b-b-b-b-b-b-b
-    | . | . | . | . r . |      | . | . | . | . | . |
-    ----------------r----      ---------------------    
-    """
-
-    # # corner
-    # corner_lons = np.empty(np.array(rotlon2D.shape)+1)
-    # corner_lons[:] = np.nan
-    #
-    # blue = rotlon2D[1:, 1:] # top right
-    # red = rotlon2D[:-1, :-1] # bot left
-    # black = rotlon2D[1:, :-1] # top left
-    # green = rotlon2D[:-1, 1:] # bot right
-    #
-    # # centre boxes
-    # corner_lons[1:-1, 1:-1] = red + ((blue - red) / 2.0) # red +((blue - red)/2)
-    # a = red - ((blue - red) / 2.0) # extrap = red -((blu - red)/2)
-    # corner_lons[0, :-2] = a[0, :] #  # get just the corner parts
-    # corner_lons[0, 1] = a[0, 1] #  # get just the corner parts (ok)
-    #
-    # b = green + ((black - green)/2.0) # extrap to bottom right corner (
-    # corner_lons[0, -2:] = b[0, -2:] # get just the corner parts
-    # corner_lons[1, -1] = b[1, -1] # get just the corner parts (ok)
-    #
-    # c = black - ((black - green)/2.0) # extrap to top left corner (calculates top left coords)
-    # corner_lons[-2:, 0] = c[-2:, 0] # get just the corner parts
-    # corner_lons[-1, 1] = c[-1, 2] # get just the corner parts (ok)
-    #
-    # # -----------
-    #
-    # corner_lats = np.empty(np.array(rotlat2D.shape)+1)
-    # corner_lats[:] = np.nan
-    #
-    # red = rotlat2D[:-1, :-1] # bot left quadrant
-    # blue = rotlat2D[1:, 1:] # top right quadrant
-    # green = rotlat2D[:-1, 1:] # bot right quadrant
-    # black = rotlat2D[1:, :-1] # top left quadrant
-    #
-    # # centre boxes
-    # corner_lats[1:-1, 1:-1] = red + ((blue - red) / 2.0) # red +((blue - red)/2)
-    # d = red - ((blue - red) / 2.0) # extrap = red -((blu - red)/2)
-    # corner_lats[0, :-2] = d[0, :] #  # get just the corner parts
-    # corner_lats[0, 1] = d[0, 1] #  # get just the corner parts (ok)
-    #
-    # e = green + ((black - green)/2.0) # extrap to bottom right corner (
-    # corner_lats[0, -2:] = e[0, -2:] # get just the corner parts
-    # corner_lats[1, -1] = e[1, -1] # get just the corner parts (ok)
-    #
-    # f = black - ((black - green)/2.0) # extrap to top left corner (calculates top left coords)
-    # corner_lats[-2:, 0] = f[-2:, 0] # get just the corner parts
-    # corner_lats[-1, 1] = f[-1, 2] # get just the corner parts (ok)
+    # calculate corners of grid, from their centre positions
 
     # ---------------------
 
-    # corner
-    corner_lons = np.empty(np.array(rotlon2D.shape)+1)
-    corner_lons[:] = np.nan
-
-    blue = rotlon2D[1:, 1:] # top right
-    red = rotlon2D[:-1, :-1] # bot left
-    black = rotlon2D[1:, :-1] # top left
-    green = rotlon2D[:-1, 1:] # bot right
-
-    # centre boxes
-    corner_lons[1:-1, 1:-1] = red + ((blue - red) / 2.0) # red +((blue - red)/2)
-    aa = blue + ((blue - red) / 2.0)
-    corner_lons[-1, 2:] = aa[-1, :] # top row center and right corner
-    corner_lons[2:, -1] = aa[:, -1] # right side center
-    a = red - ((blue - red) / 2.0) # extrap = red -((blu - red)/2)
-    corner_lons[:-2, 0] = a[:, 0]# left center and left corner
-    corner_lons[0, :-2] = a[0, :] # bottom center and left corner
-
-    b = green - ((black - green)/2.0) # extrap to bottom right corner (
-    corner_lons[0, -2:] = b[0, -2:] # get just the corner parts
-    corner_lons[1, -1] = b[1, -1] # get just the corner parts (ok)
-
-    c = black + ((black - green)/2.0) # extrap to top left corner (calculates top left coords)
-    corner_lons[-2:, 0] = c[-2:, 0] # get just the corner parts
-    corner_lons[-1, 1] = c[-1, 1] # get just the corner parts (ok)
-
-    # -----------
-
-    corner_lats = np.empty(np.array(rotlat2D.shape)+1)
-    corner_lats[:] = np.nan
-
-    red = rotlat2D[:-1, :-1] # bot left quadrant
-    blue = rotlat2D[1:, 1:] # top right quadrant
-    green = rotlat2D[:-1, 1:] # bot right quadrant
-    black = rotlat2D[1:, :-1] # top left quadrant
-
-    # centre boxes
-    corner_lats[1:-1, 1:-1] = red + ((blue - red) / 2.0) # red +((blue - red)/2)
-    dd = blue + ((blue - red) / 2.0)
-    corner_lats[-1, 2:] = dd[-1, :] # top row center and right corner
-    corner_lats[2:, -1] = dd[:, -1] # right side center
-    d = red - ((blue - red) / 2.0) # extrap = red -((blu - red)/2)
-    corner_lats[:-2, 0] = d[:, 0]# left center and left corner
-    corner_lats[0, :-2] = d[0, :] # bottom center and left corner
-
-    e = green - ((black - green)/2.0) # extrap to bottom right corner (
-    corner_lats[0, -2:] = e[0, -2:] # get just the corner parts
-    corner_lats[1, -1] = e[1, -1] # get just the corner parts (ok)
-
-    # f = bad
-    f = black + ((black - green)/2.0) # extrap to top left corner (calculates top left coords)
-    corner_lats[-2:, 0] = f[-2:, 0] # get just the corner parts
-    corner_lats[-1, 1] = f[-1, 1] # get just the corner parts
-
-    # e = green - ((black - green)/2.0) # extrap to bottom right corner (
-    # corner_lats[0, -2:] = e[0, -2:] # get just the corner parts
-    # corner_lats[1, -1] = e[1, -1] # get just the corner parts (ok)
-    #
-    # f = black - ((black - green)/2.0) # extrap to top left corner (calculates top left coords)
-    # corner_lats[-2:, 0] = f[-2:, 0] # get just the corner parts
-    # corner_lats[-1, 1] = f[-1, 1] # get just the corner parts (ok)
-
-    # ----------------------------------
+    corner_lats = calculate_corner_locations(rotlat2D)
+    corner_lons = calculate_corner_locations(rotlon2D)
 
     # unrotate the model data
     if model_type == 'UKV':
@@ -241,21 +186,26 @@ if __name__ == '__main__':
     # Plotting
     # ==============================================================================
 
-    # fast plot - need to convert lon and lats from center points to corners for pcolormesh()
-    fig, ax = plt.subplots(1, 1, figsize=(6, 4.4))
+    # fast plot - need to convert lon and lats from centre points to corners for pcolormesh()
+    for hr_idx, hr in enumerate(mod_data['time']):
+        fig, ax = plt.subplots(1, 1, figsize=(6, 4.4))
 
-    mesh = plt.pcolormesh(lons, lats, mod_data['bsc_attenuated'][6, 6, :, :],
-                   norm=LogNorm(vmin=1e-7, vmax=1e-5), cmap=cm.get_cmap('jet'))
+        mesh = plt.pcolormesh(lons, lats, mod_data['bsc_attenuated'][hr_idx, 6, :, :],
+                       norm=LogNorm(vmin=1e-7, vmax=1e-5), cmap=cm.get_cmap('jet'))
 
-    # plot each ceilometer location
-    for site, loc in ceil_metadata.iteritems():
-        # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
-        plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
-        plt.annotate(site, (loc[0], loc[1]))
+        # plot each ceilometer location
+        for site, loc in ceil_metadata.iteritems():
+            # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
+            plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
+            plt.annotate(site, (loc[0], loc[1]))
 
-    ax.set_xlabel(r'$Longitude$')
-    ax.set_ylabel(r'$Latitude$')
-    plt.colorbar(mesh)
+        ax.set_xlabel(r'$Longitude$')
+        ax.set_ylabel(r'$Latitude$')
+        plt.colorbar(mesh)
+        plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' backscatter')
+        savename = hr.strftime('%Y-%m-%d_%H') + '_beta.png'
+        plt.savefig(savedir + savename)
+        plt.close(fig)
 
 
 
