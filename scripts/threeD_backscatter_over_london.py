@@ -13,6 +13,7 @@ import iris
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import matplotlib.cm as cm
+import os
 
 import ellUtils.ellUtils as eu
 import ceilUtils.ceilUtils as ceil
@@ -85,7 +86,7 @@ def calculate_corner_locations(coord):
 
     return corner
 
-def rotate_lon_lat_2D(longitude, latitude, corner_locs=False):
+def rotate_lon_lat_2D(longitude, latitude, model_type, corner_locs=False):
 
     """
     Create 2D array of lon and lats in rotated space (WGS84)
@@ -166,10 +167,6 @@ if __name__ == '__main__':
 
     # --- User changes
 
-    # min and max height to cut off backscatter (avoice clouds above BL, make sure all ceils start fairly from bottom)
-    min_height = 0.0
-    max_height = 2000.0
-
     # save?
     numpy_save = True
 
@@ -183,11 +180,16 @@ if __name__ == '__main__':
     maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
     datadir = maindir + 'data/'
     modDatadir = datadir + model_type + '/'
-    savedir = maindir + 'figures/model_runs/'
+    savedir = maindir + 'figures/model_runs/cross_sections/'
     npysavedir = datadir + 'npy/'
 
-    # test case from unused paper 2 UKV data
-    daystr = ['20170902']
+    # # test case from unused paper 2 UKV data
+    daystr = ['20180903']
+    # current set (missing 20180215 and 20181101)
+    # daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
+    #           '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
+    #           '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
+    #           '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
     day = eu.dateList_to_datetime(daystr)[0]
     #[i.strftime('%Y%j') for i in days_iterate]
 
@@ -214,27 +216,38 @@ if __name__ == '__main__':
     # Plotting
     # ==============================================================================
 
+    # find best aspect ratio for the plot so to portray the UKV grid more accurately
+    aspectRatio = float(mod_data['longitude'].shape[0]) / float(mod_data['latitude'].shape[0])
+
     # fast plot - need to convert lon and lats from centre points to corners for pcolormesh()
-    height_idx = 6
-    for hr_idx, hr in enumerate(mod_data['time']):
-        fig, ax = plt.subplots(1, 1, figsize=(6, 4.4))
+    #height_idx = 6
+    for height_idx, height_i in enumerate(mod_data['level_height'][20:25]):
+        for hr_idx, hr in enumerate(mod_data['time']):
+            fig, ax = plt.subplots(1, 1, figsize=(4.5*aspectRatio, 4.5))
 
-        mesh = plt.pcolormesh(lons, lats, mod_data['bsc_attenuated'][hr_idx, height_idx, :, :],
-                       norm=LogNorm(vmin=1e-7, vmax=1e-5), cmap=cm.get_cmap('jet'))
+            # fixed colourbar
+            # mesh = plt.pcolormesh(lons, lats, mod_data['bsc_attenuated'][hr_idx, height_idx, :, :],
+            #                norm=LogNorm(vmin=1e-7, vmax=1e-5), cmap=cm.get_cmap('jet'))
+            mesh = plt.pcolormesh(lons, lats, mod_data['bsc_attenuated'][hr_idx, height_idx, :, :],
+                                  norm=LogNorm(), cmap=cm.get_cmap('jet'))
 
-        # plot each ceilometer location
-        for site, loc in ceil_metadata.iteritems():
-            # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
-            plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
-            plt.annotate(site, (loc[0], loc[1]))
+            # plot each ceilometer location
+            for site, loc in ceil_metadata.iteritems():
+                # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
+                plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
+                plt.annotate(site, (loc[0], loc[1]))
 
-        ax.set_xlabel(r'$Longitude$')
-        ax.set_ylabel(r'$Latitude$')
-        plt.colorbar(mesh)
-        plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height='+str(mod_data['level_height'][height_idx])+'m')
-        savename = hr.strftime('%Y-%m-%d_%H') + '_beta.png'
-        plt.savefig(savedir + savename)
-        plt.close(fig)
+            ax.set_xlabel(r'$Longitude$')
+            ax.set_ylabel(r'$Latitude$')
+            plt.colorbar(mesh)
+            plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height='+str(mod_data['level_height'][height_idx])+'m')
+            savesubdir = savedir + hr.strftime('%Y-%m-%d') + '/' # sub dir within the savedir
+            savename = hr.strftime('%Y-%m-%d_%H') + '_{:05.0f}'.format(mod_data['level_height'][height_idx]) + 'm_beta.png'
+
+            if os.path.exists(savesubdir) == False:
+                os.mkdir(savesubdir)
+            plt.savefig(savesubdir + savename)
+            plt.close(fig)
 
 
 
