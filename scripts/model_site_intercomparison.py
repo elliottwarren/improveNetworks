@@ -34,13 +34,13 @@ if __name__ == '__main__':
     # --- User changes
 
     # correlate in 'height' or in 'time'?
-    corr_type = 'height'
+    corr_type = 'time'
 
-    #main_ceil_name = 'IMU'
-    main_ceil_name = 'RGS'
-    #main_ceil_name = 'MR'
-    #main_ceil_name = 'SWT'
-    #main_ceil_name = 'NK'
+    #main_site = 'IMU'
+    #main_site = 'RGS'
+    #main_site = 'MR'
+    #main_site = 'SWT'
+    main_site = 'NK'
 
     # min and max height to cut off backscatter (avoice clouds above BL, make sure all ceils start fairly from bottom)
     min_height = 0.0
@@ -58,12 +58,19 @@ if __name__ == '__main__':
     # directories
     maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
     datadir = maindir + 'data/'
-    modDatadir = datadir + model_type + '/'
+    # modDatadir = datadir + model_type + '/'
+    modDatadir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/MorningBL/data/'\
+                 + model_type + '/'
     savedir = maindir + 'figures/model_runs/'
-    npysavedir = datadir + 'npy/'
+    npysavedir = datadir + 'npy/model_runs/'
 
-    # 2018 clear sky days for LUMA network (missing cases between doy 142 and 190)
-    daystrList = ['20170902']
+    # 2016 and 2017 cases from MorningBL work that went unused. Ignoring first few cases from MorningBL as they have
+    # fewer variables in them.
+    daystrList = ['20161125', '20161129', '20161130', '20161204', '20161205', '20161227', '20161229', '20170105',
+                  '20170117', '20170118', '20170119', '20170120', '20170121', '20170122', '20170325', '20170330',
+                  '20170408', '20170429', '20170522', '20170524', '20170526', '20170601', '20170614', '20170615',
+                  '20170619', '20170620', '20170626', '20170713', '20170717', '20170813', '20170827', '20170828',
+                  '20170902']
 
     days_iterate = eu.dateList_to_datetime(daystrList)
     [i.strftime('%Y%j') for i in days_iterate]
@@ -71,12 +78,10 @@ if __name__ == '__main__':
     # import all site names and heights
     all_sites = ['IMU', 'RGS', 'MR', 'SWT', 'NK']
 
-    # get site of main ceilometer position
-    main_site = main_ceil_name.split('_')[-1]
 
     # all ceilometers excluding the main_ceilometer. These will be paired with the main ceilometer, one at a time.
     paired_sites = deepcopy(all_sites)
-    paired_sites.remove(main_ceil_name)
+    paired_sites.remove(main_site)
 
     # which axis of backscatter to slice into based on corr_type
     print 'corr_type = ' + corr_type
@@ -89,9 +94,9 @@ if __name__ == '__main__':
     min_corr_pairs = 6
 
     # save info?
-    savestr = main_ceil_name + '_' + corr_type + '_aerFO_statistics.npy'
+    savestr = main_site + '_aerFO_' + corr_type + '_statistics.npy'
 
-    print 'main ceilometer: ' + corr_type + '_' +main_ceil_name
+    print 'main ceilometer: ' + corr_type + '_' +main_site
 
 
     # ==============================================================================
@@ -103,13 +108,15 @@ if __name__ == '__main__':
     # statistics = np_dict['statistics']
 
     # set up statistics dictionary
-    statistics = setup_statistics(corr_type, paired_sites, daystrList)
+    statistics = setup_statistics(corr_type, paired_sites, daystrList, 'ukv')
 
     # Read Ceilometer metadata
     ceilsitefile = 'improveNetworksCeils.csv'
     ceil_metadata = ceil.read_ceil_metadata(datadir, ceilsitefile)
 
     for d, day in enumerate(days_iterate):
+
+        print 'day = ' + day.strftime('%Y-%m-%d (%j)')
 
         # calculate aerFO backscatter and other variables
         mod_data = FO.mod_site_extract_calc(day, ceil_metadata, modDatadir, model_type, res, 905,
@@ -187,7 +194,7 @@ if __name__ == '__main__':
 
     # save statistics in numpy array
     if numpy_save == True:
-        save_dict = {'statistics': statistics, 'cases': days_iterate, 'all_sites': all_sites, 'main_site': main_site,
+        save_dict = {'statistics': statistics, 'cases': days_iterate, 'paired_sites': paired_sites, 'main_site': main_site,
                      'height': mod_data[main_site]['level_height']}
         np.save(npysavedir + savestr, save_dict)
         print 'data saved!: ' + npysavedir + savestr
