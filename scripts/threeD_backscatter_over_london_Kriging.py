@@ -10,6 +10,7 @@ from matplotlib.colors import LogNorm
 import matplotlib.cm as cm
 import os
 import math
+import datetime as dt
 
 import ellUtils.ellUtils as eu
 import ceilUtils.ceilUtils as ceil
@@ -18,10 +19,10 @@ from forward_operator import FOUtils as FO
 from forward_operator import FOconstants as FOcon
 
 from pykrige.ok import OrdinaryKriging
-from pykrige.uk import UniversalKriging
+# from pykrige.uk import UniversalKriging
 # from pykrige.ok3d import OrdinaryKriging3D
-from pykrige.rk import Krige
-from pykrige.compat import GridSearchCV
+# from pykrige.rk import Krige
+# from pykrige.compat import GridSearchCV
 
 # Kriging Doc: https://media.readthedocs.org/pdf/pykrige/latest/pykrige.pdf
 
@@ -100,6 +101,33 @@ def convert_deg_to_km(longitude, latitude):
 
     return rotlon2d, rotlat2d, rotlon_km, rotlat_km
 
+# plotting
+
+def twoD_range_one_day(day_time, day_height, day_range, mlh_obs):
+
+    """
+    Plot today's 2D range today with the mixing layer heights
+    :param day_time:
+    :param day_height:
+    :param day_range:
+    :param mlh_obs (dict): mixing layer height observations
+    :return: fix, ax
+    """
+
+    day_hrs = [i.hour for i in day_time]
+    fig, ax = plt.subplots(1, figsize=(7, 5))
+    plt.pcolormesh(day_hrs, day_height, day_range, vmin=0, vmax=65.0)
+    # , cmap=cm.get_cmap('jet'))
+    plt.colorbar()
+    for site_id in mlh_obs.iterkeys():
+        plt.plot(day_hrs, mlh_obs[site_id]['MH'], label=site_id)
+    plt.legend(loc='top left')
+    plt.suptitle(mod_data['time'][0].strftime('%Y-%m-%d') + ' ' + data_var + ' - WS = ' + str(U_mean[d]))
+    plt.savefig(twodrangedir + mod_data['time'][0].strftime('%Y-%m-%d_') + data_var + '.png')
+    plt.close()
+
+    return fig, ax
+
 if __name__ == '__main__':
 
     # ==============================================================================
@@ -127,9 +155,11 @@ if __name__ == '__main__':
     # directories
     maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
     datadir = maindir + 'data/'
+    ceilDatadir = datadir + 'L1/'
     modDatadir = datadir + model_type + '/'
-    savedir = maindir + 'figures/model_runs/variograms/'
+    variogramsavedir = maindir + 'figures/model_runs/variograms/'
     twodrangedir = maindir + 'figures/model_runs/2D_range/'
+    twodRangeCompositeDir = twodrangedir + 'composite/'
     npysavedir = datadir + 'npy/'
 
     # intial test case
@@ -144,6 +174,13 @@ if __name__ == '__main__':
 
     # save name
     # savestr = day.strftime('%Y%m%d') + '_3Dbackscatter.npy'
+
+
+    # import all site names and heights
+    all_sites = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']
+
+    # get height information for all the sites
+    site_bsc = ceil.extract_sites(all_sites, height_type='agl')
 
     # ==============================================================================
     # Read and process data
@@ -160,12 +197,20 @@ if __name__ == '__main__':
     range = np.empty((len(days_iterate), 24, 41))
     range[:] = np.nan
 
-    U_mean = []
-    aer = []
+    U_mean = np.empty((len(days_iterate)))
+    U_mean[:] = np.nan
+
+    aer_mean = np.empty((len(days_iterate)))
+    aer_mean[:] = np.nan
 
     for d, day in enumerate(days_iterate):
 
         print 'day = ' + day.strftime('%Y-%m-%d')
+
+        # times to match to, so the time between days will line up
+        start = dt.datetime(day.year, day.month, day.day, 0, 0, 0)
+        end = start + dt.timedelta(days=1) - dt.timedelta(minutes=60)
+        time_match = eu.date_range(start, end, 1, 'hour')
 
         # calculate the 3D backscatter field across London
         # .shape = (hour, height, lat, lon)
@@ -182,8 +227,11 @@ if __name__ == '__main__':
         # U wind from ground to 955 m - try to find day with lowest wind values (more local source emissions)
         # alternative - try when murk was high!
         U = np.sqrt((mod_data['u_wind'][:, :16, :, :]**2.0) + (mod_data['v_wind'][:, :16, :, :]**2.0))
-        U_mean += [np.nanmean(U)]
-        aer += [np.nanmean(mod_data['aerosol_for_visibility'][:, :16, :, :])]
+        U_mean[d] = np.nanmean(U)
+        aer_mean[d] = np.nanmean(mod_data['aerosol_for_visibility'][:, :16, :, :])
+
+        # read in MLH data
+        mlh_obs = ceil.read_all_ceils(day, site_bsc, ceilDatadir, 'MLH', timeMatch=time_match)
 
         # ==============================================================================
         # Kriging
@@ -257,7 +305,7 @@ if __name__ == '__main__':
                 # plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height=' + str(mod_data['level_height'][height_idx]) + 'm')
                 # ax.set_xlabel('Distance [km]')
                 # ax.set_ylabel('Semi-variance')
-                # savesubdir = savedir + hr.strftime('%Y-%m-%d') + '/'
+                # savesubdir = variogramsavedir + hr.strftime('%Y-%m-%d') + '/'
                 # savename = hr.strftime('%Y-%m-%d_%H') +  '_{:05.0f}'.format(mod_data['level_height'][height_idx]) + 'm_variogram'
                 #
                 # if os.path.exists(savesubdir) == False:
@@ -274,31 +322,30 @@ if __name__ == '__main__':
         # plt.figure()
         # plt.hist(data.flatten(), bins=50)
 
-    # np.argsort(U_mean)
-    # np.array(U_mean)[np.argsort(U_mean)]
+        # np.argsort(U_mean)
+        # np.array(U_mean)[np.argsort(U_mean)]
 
-    # ==============================================================================
-    # Plotting
-    # ==============================================================================
+        # ==============================================================================
+        # Plotting
+        # ==============================================================================
 
-    # One day case
-    time = [i.hour for i in mod_data['time'][:-1]]
-    fig, ax = plt.subplots(1, figsize=(7,5))
-    plt.pcolormesh(time, mod_data['level_height'][height_range], range[0, : , height_range] , vmin=0, vmax=65.0)
-    #, cmap=cm.get_cmap('jet'))
-    plt.colorbar()
-    plt.suptitle(mod_data['time'][0].strftime('%Y-%m-%d') + ' ' + data_var)
-    plt.savefig(twodrangedir + mod_data['time'][0].strftime('%Y-%m-%d_')+data_var+'.png')
+        # this day's variables to plot
+        day_time = mod_data['time'][:-1]
+        day_height = mod_data['level_height'][height_range]
+        day_range = range[d, :, height_range]
 
-    # multiple days
-    time = [i.hour for i in mod_data['time'][:-1]]
-    range_avg = np.nanmedian(range[:, : , height_range], axis=0)
-    fig, ax = plt.subplots(1, figsize=(7,5))
-    plt.pcolormesh(time, mod_data['level_height'][height_range], np.transpose(range_avg) , vmin=0, vmax=65.0)
-    #, cmap=cm.get_cmap('jet'))
-    plt.colorbar()
-    plt.suptitle(str(len(days_iterate)) + 'days: ' + data_var)
-    plt.savefig(twodrangedir +data_var+'_28daymed.png')
+        # plot 2D range for today
+        fig, ax = twoD_range_one_day(day_time, day_height, day_range, mlh_obs)
+
+    # # multiple days
+    # time = [i.hour for i in mod_data['time'][:-1]]
+    # range_comp = np.nanmedian(range[:, : , height_range], axis=0)
+    # fig, ax = plt.subplots(1, figsize=(7,5))
+    # plt.pcolormesh(time, mod_data['level_height'][height_range], np.transpose(range_comp) , vmin=0, vmax=65.0)
+    # #, cmap=cm.get_cmap('jet'))
+    # plt.colorbar()
+    # plt.suptitle(str(len(days_iterate)) + 'days: ' + data_var)
+    # plt.savefig(twodRangeCompositeDir +data_var+'_28daymed.png')
 
     print 'END PROGRAM'
 
