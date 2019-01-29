@@ -14,7 +14,7 @@ from ellUtils import ellUtils as eu
 from ceilUtils import ceilUtils as ceil
 
 
-def setup_statistics(corr_type, paired_sites):
+def setup_statistics(corr_type, paired_sites, daystrList, data_type):
     """
     Set up the statistics dictionary. Arrays of predefined size, based on the corr_type
     :param corr_type:
@@ -23,9 +23,15 @@ def setup_statistics(corr_type, paired_sites):
 
     # which variable will the statistics be carried out in (time or height?) - make array correct shape
     if corr_type == 'time':
-        dim_length = 5761
+        if data_type == 'ceil':
+            dim_length = 5761
+        elif data_type == 'ukv':
+            dim_length = 25
     elif corr_type == 'height':
-        dim_length = 770
+        if data_type == 'ceil':
+            dim_length = 770
+        elif data_type == 'ukv':
+            dim_length = 70
     else:
         raise ValueError('corr_type not set as time or height!')
 
@@ -205,10 +211,10 @@ if __name__ == '__main__':
     # --- User changes
 
     # correlate in 'height' or in 'time'?
-    corr_type = 'height'
+    corr_type = 'time'
 
-    #main_ceil_name = 'CL31-A_IMU'
-    main_ceil_name = 'CL31-B_RGS'
+    main_ceil_name = 'CL31-A_IMU'
+    #main_ceil_name = 'CL31-B_RGS'
     #main_ceil_name = 'CL31-C_MR'
     #main_ceil_name = 'CL31-D_SWT'
     #main_ceil_name = 'CL31-E_NK'
@@ -242,6 +248,17 @@ if __name__ == '__main__':
     daystrList = ['20180216', '20180406', '20180418', '20180419', '20180420',
         '20180505', '20180506', '20180507', '20180514', '20180515',
         '20180519', '20180520', '20180805', '20180806', '20180902']
+
+    # # BIGGER list with more cloud that could be screened. (Sept, Oct and Nov + more summer cases)
+    # # 2018 clear sky days for LUMA network (missing cases between doy 142 and 190)
+    # daystrList = ['20180216', '20180406', '20180418', '20180419', '20180420',
+    #               '20180505', '20180506', '20180507', '20180514', '20180515',
+    #               '20180519', '20180520', '20180622', '20180623', '20180624',
+    #               '20180625', '20180626', '20180802', '20180803', '20180804',
+    #               '20180805', '20180806', '20180901', '20180902', '20180903',
+    #               '20181007', '20181010', '20181020', '20181023',
+    #               '20181102']
+
 
     days_iterate = eu.dateList_to_datetime(daystrList)
     [i.strftime('%Y%j') for i in days_iterate]
@@ -283,7 +300,7 @@ if __name__ == '__main__':
     # ==============================================================================
 
     # set up statistics dictionary
-    statistics = setup_statistics(corr_type, paired_sites)
+    statistics = setup_statistics(corr_type, paired_sites, daystrList, 'ceil')
 
     for d, day in enumerate(days_iterate):
 
@@ -301,7 +318,7 @@ if __name__ == '__main__':
         cld_obs = ceil.read_all_ceils(day, site_bsc, ceilCLDDatadir, 'CLD', timeMatch=time_match)
 
         # read in MLH
-        mlh_obs = ceil.read_all_ceils(day, site_bsc, ceilDatadir, 'MLH', timeMatch=time_match)
+        #mlh_obs = ceil.read_all_ceils(day, site_bsc, ceilDatadir, 'MLH', timeMatch=time_match)
 
         # get list of all sites present this day, excluding the main site
         paired_sites_today = deepcopy(bsc_obs.keys())
@@ -332,12 +349,12 @@ if __name__ == '__main__':
                     remove_cloud_effected_backscatter(cld_obs[site], 'CLD_Height_L1',  bsc_obs[site]['backscatter'],
                                                       cbh_lower_gates, max_height)
 
-                # 4. nan above the mixing layer height using the MLH data
-                # ToDo change this to be a mixing height OR residual layer. Not just the mixing height.
-                for i, mlh_i in enumerate(mlh_obs[site]['MH']):
-                    _, mlh_height_idx, _ = eu.nearest(bsc_obs[site]['height'], mlh_i)
-                    # nan all backscatter above this level
-                    bsc_obs[site]['backscatter'][i, mlh_height_idx:] = np.nan
+                # # 4. nan above the mixing layer height using the MLH data
+                # # ToDo change this to be a mixing height OR residual layer. Not just the mixing height.
+                # for i, mlh_i in enumerate(mlh_obs[site]['MH']):
+                #     _, mlh_height_idx, _ = eu.nearest(bsc_obs[site]['height'], mlh_i)
+                #     # nan all backscatter above this level
+                #     bsc_obs[site]['backscatter'][i, mlh_height_idx:] = np.nan
 
 
             for paired_site_i in paired_sites:
