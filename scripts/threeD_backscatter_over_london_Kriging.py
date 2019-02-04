@@ -8,6 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import matplotlib.cm as cm
+import matplotlib.colors as colors
 import os
 import math
 import datetime as dt
@@ -103,7 +104,7 @@ def convert_deg_to_km(longitude, latitude):
 
 # plotting
 
-def twoD_range_one_day(day_time, day_height, day_range, mlh_obs):
+def twoD_range_one_day(day_time, day_height, day_range, mlh_obs, data_var, U_str, aer_str):
 
     """
     Plot today's 2D range today with the mixing layer heights
@@ -114,19 +115,32 @@ def twoD_range_one_day(day_time, day_height, day_range, mlh_obs):
     :return: fix, ax
     """
 
+    # Get discrete colourbar
+    vmin = 0.0
+    vmax = 65.0
+    #cmap, norm = eu.discrete_colour_map(vmin, vmax, 14) # cmap=plt.cm.viridis
+
+    cmap = cm.get_cmap('viridis_r', 13)
+    # cmap = cm.get_cmap('jet', 13)
+
     day_hrs = [i.hour for i in day_time]
     fig, ax = plt.subplots(1, figsize=(7, 5))
-    plt.pcolormesh(day_hrs, day_height, day_range, vmin=0, vmax=65.0)
+    plt.pcolormesh(day_hrs, day_height, day_range, vmin=vmin, vmax=vmax, cmap=cmap)
     # , cmap=cm.get_cmap('jet'))
     plt.colorbar()
     for site_id in mlh_obs.iterkeys():
-        plt.plot(day_hrs, mlh_obs[site_id]['MH'], label=site_id)
-    plt.legend(loc='top left')
-    plt.suptitle(mod_data['time'][0].strftime('%Y-%m-%d') + ' ' + data_var + ' - WS = ' + str(U_mean[d]))
+        plt.plot(day_hrs, mlh_obs[site_id]['MH'], marker='o', label=site_id)
+    plt.legend(loc='upper left')
+    plt.ylabel('height [m]')
+    plt.xlabel('time [hr]')
+
+    plt.suptitle(mod_data['time'][0].strftime('%Y-%m-%d') + ' ' + data_var + '; WS=' + U_str + '; aer='+aer_str)
     plt.savefig(twodrangedir + mod_data['time'][0].strftime('%Y-%m-%d_') + data_var + '.png')
     plt.close()
 
     return fig, ax
+
+
 
 if __name__ == '__main__':
 
@@ -164,12 +178,14 @@ if __name__ == '__main__':
 
     # intial test case
     # daystr = ['20180406']
-    daystr = ['20180903'] # low wind speed day (2.62 m/s)
-    # current set (missing 20180215 and 20181101)
+    # daystr = ['20180903'] # low wind speed day (2.62 m/s)
+    # current set (missing 20180215 and 20181101) # 08-03
     # daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
     #           '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
     #           '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
     #           '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
+    daystr = ['20180803','20180804','20180805','20180806',
+              '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
     days_iterate = eu.dateList_to_datetime(daystr)
 
     # save name
@@ -297,6 +313,15 @@ if __name__ == '__main__':
                 OK = OrdinaryKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(),
                                      variogram_model=variogram_model, nlags=35, weight=True) # verbose=True,enable_plotting=True,
 
+                data2 = np.random.rand(1440, 1440)#.astype(np.float16)
+                fakelats = np.random.rand(1440)#.astype(np.float16)
+                fakelons = np.random.rand(1440)#.astype(np.float16)
+
+                print str(dt.datetime.now())
+                OK = OrdinaryKriging(fakelons.flatten(), fakelats.flatten(), data2.flatten(),
+                                     variogram_model=variogram_model, nlags=35, weight=True)
+                print str(dt.datetime.now())
+
                 # # Takes a long time ...
                 # UK = UniversalKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(), enable_plotting=True,
                 #                      variogram_model=variogram_model, nlags=20, weight=True, verbose=True) # verbose=True
@@ -333,9 +358,11 @@ if __name__ == '__main__':
         day_time = mod_data['time'][:-1]
         day_height = mod_data['level_height'][height_range]
         day_range = range[d, :, height_range]
+        U_str = '{:.4}'.format(U_mean[d])
+        aer_str = '{:.4}'.format(aer_mean[d])
 
         # plot 2D range for today
-        fig, ax = twoD_range_one_day(day_time, day_height, day_range, mlh_obs)
+        fig, ax = twoD_range_one_day(day_time, day_height, day_range, mlh_obs, data_var, U_str, aer_str)
 
     # # multiple days
     # time = [i.hour for i in mod_data['time'][:-1]]
