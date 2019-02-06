@@ -25,11 +25,11 @@ import os
 import math
 import datetime as dt
 
-import ellUtils.ellUtils as eu
-import ceilUtils.ceilUtils as ceil
+import ellUtils as eu
+import ceilUtils as ceil
 
-from forward_operator import FOUtils as FO
-from forward_operator import FOconstants as FOcon
+from Utils import FOUtils as FO
+from Utils import FOconstants as FOcon
 
 from pykrige.ok import OrdinaryKriging
 # from pykrige.uk import UniversalKriging
