@@ -4,6 +4,18 @@ Script to carry out Kriging on 3D modelled backscatter over London.
 Created by Elliott Warren Fri 14 Dec 2018
 """
 
+# multiple import when on MO machine
+import sys
+#sys.path.append('C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/scripts')
+# from threeD_backscatter_over_london import calculate_corner_locations, rotate_lon_lat_2D
+
+# workaround while PYTHONPATH plays up on MO machine
+sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/Utils') #aerFO
+sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ellUtils') # general utils
+sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ceilUtils') # ceil utils
+
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
@@ -27,9 +39,7 @@ from pykrige.ok import OrdinaryKriging
 
 # Kriging Doc: https://media.readthedocs.org/pdf/pykrige/latest/pykrige.pdf
 
-import sys
-sys.path.append('C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/scripts')
-from threeD_backscatter_over_london import calculate_corner_locations, rotate_lon_lat_2D
+
 
 # great circle formula
 def Haversine_formula(lats, lons):
