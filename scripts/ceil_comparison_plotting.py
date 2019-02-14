@@ -16,6 +16,75 @@ from copy import deepcopy
 import ellUtils.ellUtils as eu
 import ceilUtils.ceilUtils as ceil
 
+def intercomparison_line_shade_plotting(savedir, ind_var, data, heights, time_match, stat_type, main_name, paired_sites):
+
+    """
+    Plot median and IQR of a prescribed statistic, within the [statistic] dictionary
+
+    :param savedir:
+    :param ind_var:
+    :param data:
+    :param heights:
+    :param time_match:
+    :param stat_type:
+    :param main_name:
+    :param paired_sites
+    :return: fig
+    """
+
+    # extract out vars from data
+    statistics = data['statistics']
+    cases = data['cases']
+
+    # plotting details
+    if ind_var == 'time':
+        x_axis = time_match
+        x_label = 'time [HH:MM]'
+    elif ind_var == 'height':
+        x_axis = heights[main_name]
+        x_label = 'height [m]'
+        x_lim = [0.0, 2000.0]
+
+    fig = plt.figure()
+    ax = plt.gca()
+
+    for paired_site_i in paired_sites:
+
+        if stat_type == 'median_diff':
+            y_label = main_name + ' - ' + paired_site_i
+            # y_lim = [np.nanmin(statistics[paired_site_i][stat_type]),
+            #          np.nanmax(statistics[paired_site_i][stat_type])]
+        elif stat_type == 'corr_rs':
+            y_lim = [0.6, 1.05]
+            y_label = 'Spearman r'
+
+        # line colour to match ceilometer
+        split = paired_site_i.split('_')[-1]
+        colour = ceil.site_bsc_colours[split]
+
+        stat = statistics[paired_site_i][stat_type]
+
+        idx = np.array([any(np.isfinite(row)) for row in stat])
+        med_rs = np.nanmedian(stat, axis=1)
+        pct25_rs = np.nanpercentile(stat, 25, axis=1)
+        pct75_rs = np.nanpercentile(stat, 75, axis=1)
+
+        plt.plot(x_axis[idx], med_rs[idx], '-', color=colour, label=paired_site_i)
+        ax.fill_between(x_axis[idx], pct25_rs[idx], pct75_rs[idx], facecolor=colour, alpha=0.2)
+
+    # plt.xlim([time_match[0], time_match[-1]])
+    # plt.xlim([0.0, 2000.0])
+    plt.ylabel(y_label)
+    plt.xlabel(x_label)
+    # plt.ylim([0.0, 1.05])
+    plt.ylim(y_lim)
+    plt.legend()
+    if ind_var == 'time':
+        ax.xaxis.set_major_formatter(DateFormatter('%H:%M'))
+    plt.suptitle(main_name + '; ' + str(len(cases)) + ' days')
+    plt.savefig(savedir + stat_type + '_' + ind_var + '_' +  main_name + '.png')
+
+    return fig
 
 if __name__ == '__main__':
 
@@ -26,7 +95,7 @@ if __name__ == '__main__':
     # --- User changes
 
     # independent variable height or in time?
-    ind_var = 'height'
+    ind_var = 'time'
 
     ceil_list = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']
     #ceil_list = ['CL31-A_IMU']
@@ -52,22 +121,19 @@ if __name__ == '__main__':
         # test partial cloud day KSK15S
         # daystrList = ['20080730']
 
-        # 2018 clear sky days for LUMA network (missing cases between doy 142 and 190)
-        daystrList = ['20180216', '20180406', '20180418', '20180419', '20180420',
-           '20180505', '20180506', '20180507', '20180514', '20180515',
-           '20180519', '20180520', '20180805', '20180806', '20180902']
-
-        days_iterate = eu.dateList_to_datetime(daystrList)
-        # [i.strftime('%Y%j') for i in days_iterate]
+        # # 2018 clear sky days for LUMA network (missing cases between doy 142 and 190)
+        # daystrList = ['20180216', '20180406', '20180418', '20180419', '20180420',
+        #    '20180505', '20180506', '20180507', '20180514', '20180515',
+        #    '20180519', '20180520', '20180805', '20180806', '20180902']
+        #
+        # days_iterate = eu.dateList_to_datetime(daystrList)
+        # # [i.strftime('%Y%j') for i in days_iterate]
 
         # import all site names and heights
         all_sites = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']
 
         paired_sites = deepcopy(all_sites)
         paired_sites.remove(main_ceil_name)
-
-        # main_ceil = {main_ceil_name: ceil.site_bsc[main_ceil_name]}
-        site_bsc = ceil.extract_sites(all_sites)
 
         # KSK15S pair
         # site_bsc = {'CL31-A_KSK15S': 40.5 - 31.4,
@@ -85,6 +151,7 @@ if __name__ == '__main__':
         data = np.load(npysavedir + filename).flat[0]
         statistics = data['statistics']
         site_bsc = data['site_bsc']
+        cases = data['cases']
 
         # temporarily use these at the height of the ceilometers until the height is saved with each .npy file
         heights = {site: np.arange(site_bsc[site] + 10.0, site_bsc[site] + 10.0 + (10.0 * 770), 10.0) for site in site_bsc}
@@ -100,60 +167,64 @@ if __name__ == '__main__':
         # plot data
         # ==============================================================================
 
+        # stat to plot (what is in the statistics dictionary) # corr_rs, median_diff,...
+        stat_type = 'corr_rs'
+
         # ---------------------------------
         # median and IQR corr plot (all cases together)
+        fig = intercomparison_line_shade_plotting(ind_var, data, heights, stat_type, main_ceil_name)
 
-        # plotting details
-        if ind_var == 'time':
-            x_axis = time_match
-            x_label = 'time [HH:MM]'
-        elif ind_var == 'height':
-            x_axis = heights[main_ceil_name]
-            x_label = 'height [m]'
-            x_lim = [0.0, 2000.0]
-
-        # stat to plot (what is in the statistics dictionary) # corr_rs
-        stat_type = 'median_diff'
-
-        fig = plt.figure()
-        ax = plt.gca()
-
-        for paired_site_i in paired_sites:
-
-            if stat_type == 'median_diff':
-                y_label = main_ceil_name + ' - ' + paired_site_i
-                # y_lim = [np.nanmin(statistics[paired_site_i][stat_type]),
-                #          np.nanmax(statistics[paired_site_i][stat_type])]
-            elif stat_type == 'corr_rs':
-                y_lim = [0.0, 1.05]
-                y_label = 'Spearman r'
-
-            # line colour to match ceilometer
-            split = paired_site_i.split('_')[-1]
-            colour = ceil.site_bsc_colours[split]
-
-            corr_rs = statistics[paired_site_i][stat_type]
-
-            idx = np.array([any(np.isfinite(row)) for row in corr_rs])
-            med_rs = np.nanmedian(corr_rs, axis=1)
-            pct25_rs = np.nanpercentile(corr_rs, 25, axis=1)
-            pct75_rs = np.nanpercentile(corr_rs, 75, axis=1)
-
-            plt.plot(x_axis[idx], med_rs[idx], '-', color=colour, label=paired_site_i)
-            ax.fill_between(x_axis[idx], pct25_rs[idx], pct75_rs[idx], facecolor=colour, alpha=0.2)
-
-
-        # plt.xlim([time_match[0], time_match[-1]])
-        #plt.xlim([0.0, 2000.0])
-        plt.ylabel(y_label)
-        plt.xlabel(x_label)
-        #plt.ylim([0.0, 1.05])
-        #plt.ylim(y_lim)
-        plt.legend()
-        if ind_var == 'time':
-            ax.xaxis.set_major_formatter(DateFormatter('%H:%M'))
-        plt.suptitle(main_ceil_name+ '; ' + str(len(daystrList)) + ' days; 15sec')
-        plt.savefig(savedir + stat_type +'_'+main_ceil_name +'_'+ind_var+'.png')
+        # # plotting details
+        # if ind_var == 'time':
+        #     x_axis = time_match
+        #     x_label = 'time [HH:MM]'
+        # elif ind_var == 'height':
+        #     x_axis = heights[main_ceil_name]
+        #     x_label = 'height [m]'
+        #     x_lim = [0.0, 2000.0]
+        #
+        # # stat to plot (what is in the statistics dictionary) # corr_rs, median_diff,...
+        # stat_type = 'corr_rs'
+        #
+        # fig = plt.figure()
+        # ax = plt.gca()
+        #
+        # for paired_site_i in paired_sites:
+        #
+        #     if stat_type == 'median_diff':
+        #         y_label = main_ceil_name + ' - ' + paired_site_i
+        #         # y_lim = [np.nanmin(statistics[paired_site_i][stat_type]),
+        #         #          np.nanmax(statistics[paired_site_i][stat_type])]
+        #     elif stat_type == 'corr_rs':
+        #         y_lim = [-0.2, 1.05]
+        #         y_label = 'Spearman r'
+        #
+        #     # line colour to match ceilometer
+        #     split = paired_site_i.split('_')[-1]
+        #     colour = ceil.site_bsc_colours[split]
+        #
+        #     corr_rs = statistics[paired_site_i][stat_type]
+        #
+        #     idx = np.array([any(np.isfinite(row)) for row in corr_rs])
+        #     med_rs = np.nanmedian(corr_rs, axis=1)
+        #     pct25_rs = np.nanpercentile(corr_rs, 25, axis=1)
+        #     pct75_rs = np.nanpercentile(corr_rs, 75, axis=1)
+        #
+        #     plt.plot(x_axis[idx], med_rs[idx], '-', color=colour, label=paired_site_i)
+        #     ax.fill_between(x_axis[idx], pct25_rs[idx], pct75_rs[idx], facecolor=colour, alpha=0.2)
+        #
+        #
+        # # plt.xlim([time_match[0], time_match[-1]])
+        # #plt.xlim([0.0, 2000.0])
+        # plt.ylabel(y_label)
+        # plt.xlabel(x_label)
+        # #plt.ylim([0.0, 1.05])
+        # plt.ylim(y_lim)
+        # plt.legend()
+        # if ind_var == 'time':
+        #     ax.xaxis.set_major_formatter(DateFormatter('%H:%M'))
+        # plt.suptitle(main_ceil_name+ '; ' + str(len(cases)) + ' days; 15sec')
+        # plt.savefig(savedir + stat_type +'_'+main_ceil_name +'_'+ind_var+'.png')
 
         # # ---------------------------------
         # # corr in height - split up days. One plot per pairing. Each case as a seperate line
