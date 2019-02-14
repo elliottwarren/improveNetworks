@@ -173,7 +173,7 @@ if __name__ == '__main__':
     # ------------------
 
     # which modelled data to read in
-    model_type = 'UKV'
+    model_type = '55m' # 'UKV'
     res = FOcon.model_resolution[model_type]
 
     # directories
@@ -187,15 +187,15 @@ if __name__ == '__main__':
     npysavedir = datadir + 'npy/'
 
     # intial test case
-    # daystr = ['20180406']
+    daystr = ['20160913'] # 55 m case
     # daystr = ['20180903'] # low wind speed day (2.62 m/s)
     # current set (missing 20180215 and 20181101) # 08-03
     # daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
     #           '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
     #           '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
     #           '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
-    daystr = ['20180803','20180804','20180805','20180806',
-              '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
+    # daystr = ['20180803','20180804','20180805','20180806',
+    #           '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
     days_iterate = eu.dateList_to_datetime(daystr)
 
     # save name
@@ -264,9 +264,15 @@ if __name__ == '__main__':
         # ==============================================================================
         # .shape(time, height, lat, lon) # definately lat then lon ...
 
-        for height_idx, height_i in enumerate(mod_data['level_height'][height_range]): # [:20]
-            print 'h = ' + str(height_i)
-            for hr_idx, hr in enumerate(mod_data['time'][:-1]): # ignore midnight next day
+        for hr_idx, hr in enumerate(mod_data['time'][:-1]): # ignore midnight next day
+
+            # read in mod_data for this hour
+            
+            # any prep....
+
+            for height_idx, height_i in enumerate(mod_data['level_height'][height_range]): # [:20]
+                print 'h = ' + str(height_i)
+
 
                 # extract 2D cross section for this time
                 # just London area
