@@ -114,13 +114,13 @@ def convert_deg_to_km(longitude, latitude):
 
 # plotting
 
-def twoD_range_one_day(day_time, day_height, day_range, mlh_obs, data_var, U_str, aer_str):
+def twoD_range_one_day(day_time, day_height, day_data, mlh_obs, data_var, twodsavedir, U_str, aer_str, rh_str):
 
     """
     Plot today's 2D range today with the mixing layer heights
     :param day_time:
     :param day_height:
-    :param day_range:
+    :param day_data:
     :param mlh_obs (dict): mixing layer height observations
     :return: fix, ax
     """
@@ -128,14 +128,44 @@ def twoD_range_one_day(day_time, day_height, day_range, mlh_obs, data_var, U_str
     # Get discrete colourbar
     vmin = 0.0
     vmax = 65.0
-    #cmap, norm = eu.discrete_colour_map(vmin, vmax, 14) # cmap=plt.cm.viridis
-
     cmap = cm.get_cmap('viridis_r', 13)
-    # cmap = cm.get_cmap('jet', 13)
 
     day_hrs = [i.hour for i in day_time]
     fig, ax = plt.subplots(1, figsize=(7, 5))
-    plt.pcolormesh(day_hrs, day_height, day_range, vmin=vmin, vmax=vmax, cmap=cmap)
+
+    plt.pcolormesh(day_hrs, day_height, day_data, cmap=cmap, vmin=vmin, vmax=vmax)
+    plt.colorbar()
+    for site_id in mlh_obs.iterkeys():
+        plt.plot(day_hrs, mlh_obs[site_id]['MH'], marker='o', label=site_id)
+    plt.legend(loc='upper left')
+    plt.ylabel('height [m]')
+    plt.xlabel('time [hr]')
+
+    plt.suptitle(mod_data['time'][0].strftime('%Y-%m-%d') + ' ' + data_var + '; WS=' + U_str + '; aer='+aer_str+'; RH='+rh_str)
+    plt.savefig(twodsavedir + mod_data['time'][0].strftime('%Y-%m-%d_') + data_var + '.png')
+    plt.close()
+
+    return fig, ax
+
+def twoD_sill_one_day(day_time, day_height, day_data, mlh_obs, data_var, twodsavedir, U_str, aer_str, rh_str):
+
+    """
+    Plot today's 2D range today with the mixing layer heights
+    :param day_time:
+    :param day_height:
+    :param day_data:
+    :param mlh_obs (dict): mixing layer height observations
+    :return: fix, ax
+    """
+
+    # Get discrete colourbar
+    cmap = cm.get_cmap('jet')
+
+    day_hrs = [i.hour for i in day_time]
+    fig, ax = plt.subplots(1, figsize=(7, 5))
+    #plt.pcolormesh(day_hrs, day_height, day_data, vmin=vmin, vmax=vmax, cmap=cmap)
+
+    plt.pcolormesh(day_hrs, day_height, day_data, cmap=cm.get_cmap('jet'), norm=LogNorm(vmin=1e-4, vmax=1e0))
     # , cmap=cm.get_cmap('jet'))
     plt.colorbar()
     for site_id in mlh_obs.iterkeys():
@@ -144,13 +174,11 @@ def twoD_range_one_day(day_time, day_height, day_range, mlh_obs, data_var, U_str
     plt.ylabel('height [m]')
     plt.xlabel('time [hr]')
 
-    plt.suptitle(mod_data['time'][0].strftime('%Y-%m-%d') + ' ' + data_var + '; WS=' + U_str + '; aer='+aer_str)
-    plt.savefig(twodrangedir + mod_data['time'][0].strftime('%Y-%m-%d_') + data_var + '.png')
+    plt.suptitle(mod_data['time'][0].strftime('%Y-%m-%d') + ' ' + data_var + '; WS=' + U_str + '; aer='+aer_str+'; RH='+rh_str)
+    plt.savefig(twodsavedir + mod_data['time'][0].strftime('%Y-%m-%d_') + data_var + '.png')
     plt.close()
 
     return fig, ax
-
-
 
 if __name__ == '__main__':
 
@@ -183,6 +211,7 @@ if __name__ == '__main__':
     modDatadir = datadir + model_type + '/'
     variogramsavedir = maindir + 'figures/model_runs/variograms/'
     twodrangedir = maindir + 'figures/model_runs/2D_range/'
+    twodsilledir = maindir + 'figures/model_runs/2D_sill/'
     twodRangeCompositeDir = twodrangedir + 'composite/'
     npysavedir = datadir + 'npy/'
 
@@ -190,11 +219,9 @@ if __name__ == '__main__':
     # daystr = ['20180406']
     # daystr = ['20180903'] # low wind speed day (2.62 m/s)
     # current set (missing 20180215 and 20181101) # 08-03
-    # daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
-    #           '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
-    #           '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
-    #           '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
-    daystr = ['20180803','20180804','20180805','20180806',
+    daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
+              '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
+              '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
               '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
     days_iterate = eu.dateList_to_datetime(daystr)
 
@@ -220,14 +247,25 @@ if __name__ == '__main__':
     ceil_metadata = ceil.read_ceil_metadata(datadir, ceilsitefile)
 
     # empty arrays to fill  (day, hour, height)
-    range = np.empty((len(days_iterate), 24, 41))
-    range[:] = np.nan
+    sill = np.empty((len(days_iterate), 24, 41))
+    sill[:] = np.nan
+
+    # empty arrays to fill  (day, hour, height)
+    v_range = np.empty((len(days_iterate), 24, 41))
+    v_range[:] = np.nan
+
+    # empty arrays to fill  (day, hour, height)
+    nugget = np.empty((len(days_iterate), 24, 41))
+    nugget[:] = np.nan
 
     U_mean = np.empty((len(days_iterate)))
     U_mean[:] = np.nan
 
     aer_mean = np.empty((len(days_iterate)))
     aer_mean[:] = np.nan
+
+    rh_mean = np.empty((len(days_iterate)))
+    rh_mean[:] = np.nan
 
     for d, day in enumerate(days_iterate):
 
@@ -255,7 +293,7 @@ if __name__ == '__main__':
         U = np.sqrt((mod_data['u_wind'][:, :16, :, :]**2.0) + (mod_data['v_wind'][:, :16, :, :]**2.0))
         U_mean[d] = np.nanmean(U)
         aer_mean[d] = np.nanmean(mod_data['aerosol_for_visibility'][:, :16, :, :])
-
+        rh_mean[d] = np.nanmean(mod_data['RH'][:, :16, :, :])
         # read in MLH data
         mlh_obs = ceil.read_all_ceils(day, site_bsc, ceilDatadir, 'MLH', timeMatch=time_match)
 
@@ -323,19 +361,6 @@ if __name__ == '__main__':
                 OK = OrdinaryKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(),
                                      variogram_model=variogram_model, nlags=35, weight=True) # verbose=True,enable_plotting=True,
 
-                data2 = np.random.rand(1440, 1440)#.astype(np.float16)
-                fakelats = np.random.rand(1440)#.astype(np.float16)
-                fakelons = np.random.rand(1440)#.astype(np.float16)
-
-                print str(dt.datetime.now())
-                OK = OrdinaryKriging(fakelons.flatten(), fakelats.flatten(), data2.flatten(),
-                                     variogram_model=variogram_model, nlags=35, weight=True)
-                print str(dt.datetime.now())
-
-                # # Takes a long time ...
-                # UK = UniversalKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(), enable_plotting=True,
-                #                      variogram_model=variogram_model, nlags=20, weight=True, verbose=True) # verbose=True
-
                 # ax = plt.gca()
                 # plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height=' + str(mod_data['level_height'][height_idx]) + 'm')
                 # ax.set_xlabel('Distance [km]')
@@ -352,7 +377,9 @@ if __name__ == '__main__':
                 # #! list order varies, depending on the variogram_model used!
                 # #! gives back partial sill (full sill - nugget), not the full sill
                 if variogram_model == 'spherical':
-                    range[d, hr_idx, height_idx] = OK.variogram_model_parameters[1]
+                    sill[d, hr_idx, height_idx] = OK.variogram_model_parameters[0]
+                    v_range[d, hr_idx, height_idx] = OK.variogram_model_parameters[1]
+                    nugget[d, hr_idx, height_idx] = OK.variogram_model_parameters[2]
 
         # plt.figure()
         # plt.hist(data.flatten(), bins=50)
@@ -367,12 +394,17 @@ if __name__ == '__main__':
         # this day's variables to plot
         day_time = mod_data['time'][:-1]
         day_height = mod_data['level_height'][height_range]
-        day_range = range[d, :, height_range]
+        day_sill_data = sill[d, :, height_range]
+        day_range_data = v_range[d, :, height_range]
         U_str = '{:.4}'.format(U_mean[d])
         aer_str = '{:.4}'.format(aer_mean[d])
+        rh_str = '{:.4}'.format(rh_mean[d])
+        savefigdir = twodsilledir
 
-        # plot 2D range for today
-        fig, ax = twoD_range_one_day(day_time, day_height, day_range, mlh_obs, data_var, U_str, aer_str)
+        # plot 2D range and sill for today
+        fig, ax = twoD_sill_one_day(day_time, day_height, day_sill_data, mlh_obs, data_var, savefigdir, U_str, aer_str, rh_str)
+
+        #fig, ax = twoD_range_one_day(day_time, day_height, day_range_data, mlh_obs, data_var, savefigdir, U_str, aer_str, rh_str)
 
     # # multiple days
     # time = [i.hour for i in mod_data['time'][:-1]]
