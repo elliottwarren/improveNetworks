@@ -219,35 +219,46 @@ if __name__ == '__main__':
     # find best aspect ratio for the plot so to portray the UKV grid more accurately
     aspectRatio = float(mod_data['longitude'].shape[0]) / float(mod_data['latitude'].shape[0])
 
+    vmin = np.min(mod_data['aerosol_for_visibility'][:, 7, :, :])
+    vmax = np.max(mod_data['aerosol_for_visibility'][:, 7, :, :])
+
     # fast plot - need to convert lon and lats from centre points to corners for pcolormesh()
-    #height_idx = 6
-    for height_idx, height_i in enumerate(mod_data['level_height'][20:25]):
-        for hr_idx, hr in enumerate(mod_data['time']):
-            fig, ax = plt.subplots(1, 1, figsize=(4.5*aspectRatio, 4.5))
+    #for height_idx, height_i in enumerate(mod_data['level_height'][:20]):
+    height_idx = 7
+    height_i = mod_data['level_height'][7]
+    for hr_idx, hr in enumerate(mod_data['time']):
+        fig, ax = plt.subplots(1, 1, figsize=(4.5*aspectRatio, 4.5))
+        # fig, ax = plt.subplots(1, 1, figsize=(3*aspectRatio, 4.5))
 
-            # fixed colourbar
-            # mesh = plt.pcolormesh(lons, lats, mod_data['bsc_attenuated'][hr_idx, height_idx, :, :],
-            #                norm=LogNorm(vmin=1e-7, vmax=1e-5), cmap=cm.get_cmap('jet'))
-            mesh = plt.pcolormesh(lons, lats, mod_data['bsc_attenuated'][hr_idx, height_idx, :, :],
-                                  norm=LogNorm(), cmap=cm.get_cmap('jet'))
+        data = mod_data['aerosol_for_visibility'][hr_idx, height_idx, :, :]
 
-            # plot each ceilometer location
-            for site, loc in ceil_metadata.iteritems():
-                # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
-                plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
-                plt.annotate(site, (loc[0], loc[1]))
+        # fixed colourbar
+        # mesh = plt.pcolormesh(lons, lats, mod_data['bsc_attenuated'][hr_idx, height_idx, :, :],
+        #                       norm=LogNorm(), cmap=cm.get_cmap('jet'))
 
-            ax.set_xlabel(r'$Longitude$')
-            ax.set_ylabel(r'$Latitude$')
-            plt.colorbar(mesh)
-            plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height='+str(mod_data['level_height'][height_idx])+'m')
-            savesubdir = savedir + hr.strftime('%Y-%m-%d') + '/' # sub dir within the savedir
-            savename = hr.strftime('%Y-%m-%d_%H') + '_{:05.0f}'.format(mod_data['level_height'][height_idx]) + 'm_beta.png'
+        mesh = plt.pcolormesh(lons, lats, data, vmin=vmin, vmax=60,
+                              cmap=cm.get_cmap('jet'))
 
-            if os.path.exists(savesubdir) == False:
-                os.mkdir(savesubdir)
-            plt.savefig(savesubdir + savename)
-            plt.close(fig)
+
+        # # plot each ceilometer location
+        # for site, loc in ceil_metadata.iteritems():
+        #     # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
+        #     plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
+        #     plt.annotate(site, (loc[0], loc[1]))
+
+        ax.set_xlabel(r'$Longitude$')
+        ax.set_ylabel(r'$Latitude$')
+        plt.colorbar(mesh)
+        plt.suptitle(hr.strftime('%Y-%m-%d_%H') + '; height='+str(mod_data['level_height'][height_idx])+'m')
+        savesubdir = savedir + hr.strftime('%Y-%m-%d') + '/' # sub dir within the savedir
+        savename = hr.strftime('%Y-%m-%d_%H') + '_{:05.0f}'.format(mod_data['level_height'][height_idx]) + 'm_aer.png'
+
+        #plt.tight_layout()
+
+        if os.path.exists(savesubdir) == False:
+            os.mkdir(savesubdir)
+        plt.savefig(savesubdir + savename)
+        plt.close(fig)
 
 
 
