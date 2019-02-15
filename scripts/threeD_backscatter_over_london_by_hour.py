@@ -14,7 +14,7 @@ sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/Utils
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ellUtils') # general utils
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ceilUtils') # ceil utils
 
-
+# '/usr/local/sci/bin/python'
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -28,8 +28,8 @@ import datetime as dt
 import ellUtils as eu
 import ceilUtils as ceil
 
-from Utils import FOUtils as FO
-from Utils import FOconstants as FOcon
+import FOUtils as FO
+import FOconstants as FOcon
 
 from pykrige.ok import OrdinaryKriging
 # from pykrige.uk import UniversalKriging
@@ -38,7 +38,6 @@ from pykrige.ok import OrdinaryKriging
 # from pykrige.compat import GridSearchCV
 
 # Kriging Doc: https://media.readthedocs.org/pdf/pykrige/latest/pykrige.pdf
-
 
 
 # great circle formula
@@ -163,108 +162,111 @@ if __name__ == '__main__':
     # data variable to plot
     data_var = 'backscatter'
     # data_var = 'RH'
-
-    height_range = np.arange(0,30) # only first set of heights
-    lon_range = np.arange(30, 65) # only London area (right hand side of larger domain -35:
-
+    
+    #height_range = np.arange(0,30) # only first set of heights
+    #lon_range = np.arange(30, 65) # only London area (right hand side of larger domain -35:
+    
     # save?
     numpy_save = True
-
+    
     # ------------------
-
+    
     # which modelled data to read in
     model_type = '55m' # 'UKV'
     res = FOcon.model_resolution[model_type]
-
+    
     # directories
-    maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-    datadir = maindir + 'data/'
-    ceilDatadir = datadir + 'L1/'
-    modDatadir = datadir + model_type + '/'
-    variogramsavedir = maindir + 'figures/model_runs/variograms/'
-    twodrangedir = maindir + 'figures/model_runs/2D_range/'
-    twodRangeCompositeDir = twodrangedir + 'composite/'
-    npysavedir = datadir + 'npy/'
-
+    maindir = os.environ.get('HOME') + '/Documents/AerosolBackMod/scripts/improveNetworks/'
+    datadir = os.environ.get('DATADIR') + '/suite_forecasts/'
+    # ceilDatadir = datadir + 'L1/'
+    ceilmetadatadir = datadir + '/metadata/'
+    variogramsavedir = maindir + 'figures/variograms/'
+    twodrangedir = maindir + 'figures/2D_range/'
+    
     # intial test case
     daystr = ['20160913'] # 55 m case
     # daystr = ['20180903'] # low wind speed day (2.62 m/s)
     # current set (missing 20180215 and 20181101) # 08-03
-    # daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
-    #           '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
-    #           '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
-    #           '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
-    # daystr = ['20180803','20180804','20180805','20180806',
-    #           '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
     days_iterate = eu.dateList_to_datetime(daystr)
-
+    
     # save name
     # savestr = day.strftime('%Y%m%d') + '_3Dbackscatter.npy'
-
-
+    
+    
     # import all site names and heights
     all_sites = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']
-
+    
     # get height information for all the sites
     site_bsc = ceil.extract_sites(all_sites, height_type='agl')
-
+    
     # ==============================================================================
     # Read and process data
     # ==============================================================================
-
+    
     # print data variable to screen
     print data_var
-
+    
     # ceilometer list to use
     ceilsitefile = 'improveNetworksCeils.csv'
     ceil_metadata = ceil.read_ceil_metadata(datadir, ceilsitefile)
-
+    
     # empty arrays to fill  (day, hour, height)
-    range = np.empty((len(days_iterate), 24, 41))
+    range = np.empty((len(days_iterate), 6, 71))
     range[:] = np.nan
-
+    
     U_mean = np.empty((len(days_iterate)))
     U_mean[:] = np.nan
-
+    
     aer_mean = np.empty((len(days_iterate)))
     aer_mean[:] = np.nan
 
     for d, day in enumerate(days_iterate):
 
         print 'day = ' + day.strftime('%Y-%m-%d')
-
+        
         # times to match to, so the time between days will line up
-        start = dt.datetime(day.year, day.month, day.day, 0, 0, 0)
-        end = start + dt.timedelta(days=1) - dt.timedelta(minutes=60)
-        time_match = eu.date_range(start, end, 1, 'hour')
+        if model_type == 'UKV':
+            start = dt.datetime(day.year, day.month, day.day, 0, 0, 0)
+            end = start + dt.timedelta(days=1) - dt.timedelta(minutes=60)
+            time_match = eu.date_range(start, end, 1, 'hour')
+        else:
+            # start = dt.datetime(day.year, day.month, day.day, 9, 0, 0)
+            start = dt.datetime(day.year, day.month, day.day, 11, 0, 0)
+            end = start + dt.timedelta(hours=6)
+            time_match = eu.date_range(start, end, 1, 'hour')
+        
+        # directory for today's data
+        modDatadir = datadir + model_type + '/London/' + day.strftime('%Y%m%d') + '/'
 
-        # calculate the 3D backscatter field across London
-        # .shape = (hour, height, lat, lon)
-        mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, res, 905, allvars=True)
+        for hr_idx, hr in enumerate(time_match):
 
-        # rotate the lon and lats onto a normal geodetic grid (WGS84) [degrees] and expands lon and lat by 1 so it can
-        # be used in plt.pcolormesh() which wants corner edges not center points
-        # rotLon2d_deg, rotLat2d_deg = rotate_lon_lat_2D(mod_data['longitude'], mod_data['latitude'], model_type)
+            # calculate the 3D backscatter field across London
+            # .shape = (hour, height, lat, lon)
+            mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, res, 905, Z='03', allvars=False, hr=hr)
 
-        # convert lons and lats to distance [km] from the bottom left corner of the grid
-        unrotLon2d, unrotLat2d, unrotLon1d, unrotLat1d= convert_deg_to_km(mod_data['longitude'][lon_range], mod_data['latitude'])
-
-        # find important days (low wind, high aerosol
-        # U wind from ground to 955 m - try to find day with lowest wind values (more local source emissions)
-        # alternative - try when murk was high!
-        U = np.sqrt((mod_data['u_wind'][:, :16, :, :]**2.0) + (mod_data['v_wind'][:, :16, :, :]**2.0))
-        U_mean[d] = np.nanmean(U)
-        aer_mean[d] = np.nanmean(mod_data['aerosol_for_visibility'][:, :16, :, :])
-
-        # read in MLH data
-        mlh_obs = ceil.read_all_ceils(day, site_bsc, ceilDatadir, 'MLH', timeMatch=time_match)
-
-        # ==============================================================================
-        # Kriging
-        # ==============================================================================
-        # .shape(time, height, lat, lon) # definately lat then lon ...
-
-        for hr_idx, hr in enumerate(mod_data['time'][:-1]): # ignore midnight next day
+            # rotate the lon and lats onto a normal geodetic grid (WGS84) [degrees] and expands lon and lat by 1 so it can
+            # be used in plt.pcolormesh() which wants corner edges not center points
+            # rotLon2d_deg, rotLat2d_deg = rotate_lon_lat_2D(mod_data['longitude'], mod_data['latitude'], model_type)
+    
+            # convert lons and lats to distance [km] from the bottom left corner of the grid
+            unrotLon2d, unrotLat2d, unrotLon1d, unrotLat1d= convert_deg_to_km(mod_data['longitude'][lon_range], mod_data['latitude'])
+    
+            # find important days (low wind, high aerosol
+            # U wind from ground to 955 m - try to find day with lowest wind values (more local source emissions)
+            # alternative - try when murk was high!
+            U = np.sqrt((mod_data['u_wind'][:, :16, :, :]**2.0) + (mod_data['v_wind'][:, :16, :, :]**2.0))
+            #U_mean[d] = np.nanmean(U)
+            #aer_mean[d] = np.nanmean(mod_data['aerosol_for_visibility'][:, :16, :, :])
+    
+            # read in MLH data
+            mlh_obs = ceil.read_all_ceils(day, site_bsc, ceilDatadir, 'MLH', timeMatch=time_match)
+    
+            # ==============================================================================
+            # Kriging
+            # ==============================================================================
+            # .shape(time, height, lat, lon) # definately lat then lon ...
+    
+            # for hr_idx, hr in enumerate(mod_data['time'][:-1]): # ignore midnight next day
 
             # read in mod_data for this hour
             
@@ -276,13 +278,18 @@ if __name__ == '__main__':
 
                 # extract 2D cross section for this time
                 # just London area
-                if data_var == 'backscatter':# or
-                    data = np.log10(mod_data[data_var][hr_idx, height_idx, :, lon_range]) # [-35:]
-                    #print 'data logged'
-                elif data_var == 'specific_humidity':
-                    data = np.log10(mod_data[data_var][hr_idx, height_idx, :, lon_range]*1e3) # [g kg-1]
-                else:
-                    data = mod_data[data_var][hr_idx, height_idx, :, lon_range]
+                if model_type == 'UKV':
+                    if data_var == 'backscatter':# or
+                        data = np.log10(mod_data[data_var][hr_idx, height_idx, :, lon_range]) # [-35:]
+                        #print 'data logged'
+                    elif data_var == 'specific_humidity':
+                        data = np.log10(mod_data[data_var][hr_idx, height_idx, :, lon_range]*1e3) # [g kg-1]
+                    else:
+                        data = mod_data[data_var][hr_idx, height_idx, :, lon_range]
+                else: # 55m
+                    if data_var == 'backscatter':
+                        data = np.log10(mod_data[data_var][0, height_idx, :, :]) # [-35:]
+                        
 
                 #ToDo Find best model to fit on the variogram, then pass best model into the main OrdinaryKriging() function
                 # use the kriging guide to help with this
@@ -329,19 +336,7 @@ if __name__ == '__main__':
                 OK = OrdinaryKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(),
                                      variogram_model=variogram_model, nlags=35, weight=True) # verbose=True,enable_plotting=True,
 
-                data2 = np.random.rand(1440, 1440)#.astype(np.float16)
-                fakelats = np.random.rand(1440)#.astype(np.float16)
-                fakelons = np.random.rand(1440)#.astype(np.float16)
-
-                print str(dt.datetime.now())
-                OK = OrdinaryKriging(fakelons.flatten(), fakelats.flatten(), data2.flatten(),
-                                     variogram_model=variogram_model, nlags=35, weight=True)
-                print str(dt.datetime.now())
-
-                # # Takes a long time ...
-                # UK = UniversalKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(), enable_plotting=True,
-                #                      variogram_model=variogram_model, nlags=20, weight=True, verbose=True) # verbose=True
-
+ 
                 # ax = plt.gca()
                 # plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height=' + str(mod_data['level_height'][height_idx]) + 'm')
                 # ax.set_xlabel('Distance [km]')
