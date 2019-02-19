@@ -14,22 +14,25 @@ sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/Utils
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ellUtils') # general utils
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ceilUtils') # ceil utils
 
-# '/usr/local/sci/bin/python'
-
-import numpy as np
+import matplotlib
+matplotlib.use('Agg') # needed as SPICE does not have a monitor and will crash otherwise if plotting is used
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import matplotlib.cm as cm
 import matplotlib.colors as colors
+
+import numpy as np
 import os
 import math
 import datetime as dt
 
 import ellUtils as eu
 import ceilUtils as ceil
-
 import FOUtils as FO
 import FOconstants as FOcon
+
+os.system('echo got to l38')
+os.system('echo '+sys.platform)
 
 from pykrige.ok import OrdinaryKriging
 # from pykrige.uk import UniversalKriging
@@ -39,6 +42,9 @@ from pykrige.ok import OrdinaryKriging
 
 # Kriging Doc: https://media.readthedocs.org/pdf/pykrige/latest/pykrige.pdf
 
+#import resource
+#os.system('max resources allowed (kB):')
+#resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
 
 # great circle formula
 def Haversine_formula(lats, lons):
@@ -151,6 +157,7 @@ def twoD_range_one_day(day_time, day_height, day_range, mlh_obs, data_var, U_str
 
 
 
+
 if __name__ == '__main__':
 
     # ==============================================================================
@@ -178,10 +185,11 @@ if __name__ == '__main__':
     # directories
     maindir = os.environ.get('HOME') + '/Documents/AerosolBackMod/scripts/improveNetworks/'
     datadir = os.environ.get('DATADIR') + '/suite_forecasts/'
-    # ceilDatadir = datadir + 'L1/'
-    ceilmetadatadir = datadir + '/metadata/'
+    ceilDatadir = os.environ.get('DATADIR') + '/MLH/'
+    ceilmetadatadir = os.environ.get('DATADIR') + '/metadata/'
     variogramsavedir = maindir + 'figures/variograms/'
     twodrangedir = maindir + 'figures/2D_range/'
+    npy_savedir = os.environ.get('DATADIR') + '/npy/'
     
     # intial test case
     daystr = ['20160913'] # 55 m case
@@ -189,15 +197,15 @@ if __name__ == '__main__':
     # current set (missing 20180215 and 20181101) # 08-03
     days_iterate = eu.dateList_to_datetime(daystr)
     
-    # save name
-    # savestr = day.strftime('%Y%m%d') + '_3Dbackscatter.npy'
-    
-    
     # import all site names and heights
     all_sites = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']
     
     # get height information for all the sites
     site_bsc = ceil.extract_sites(all_sites, height_type='agl')
+    
+    if model_type == '55m':
+        max_height_num = 76
+        max_hour_num = 10
     
     # ==============================================================================
     # Read and process data
@@ -208,11 +216,11 @@ if __name__ == '__main__':
     
     # ceilometer list to use
     ceilsitefile = 'improveNetworksCeils.csv'
-    ceil_metadata = ceil.read_ceil_metadata(datadir, ceilsitefile)
+    ceil_metadata = ceil.read_ceil_metadata(ceilmetadatadir, ceilsitefile)
     
     # empty arrays to fill  (day, hour, height)
-    range = np.empty((len(days_iterate), 6, 71))
-    range[:] = np.nan
+    v_range = np.empty((len(days_iterate), max_hour_num, max_height_num))
+    v_range[:] = np.nan
     
     U_mean = np.empty((len(days_iterate)))
     U_mean[:] = np.nan
@@ -231,8 +239,8 @@ if __name__ == '__main__':
             time_match = eu.date_range(start, end, 1, 'hour')
         else:
             # start = dt.datetime(day.year, day.month, day.day, 9, 0, 0)
-            start = dt.datetime(day.year, day.month, day.day, 11, 0, 0)
-            end = start + dt.timedelta(hours=6)
+            start = dt.datetime(day.year, day.month, day.day, 9, 0, 0)
+            end = start + dt.timedelta(hours=max_height_num)
             time_match = eu.date_range(start, end, 1, 'hour')
         
         # directory for today's data
@@ -240,21 +248,34 @@ if __name__ == '__main__':
 
         for hr_idx, hr in enumerate(time_match):
 
-            # calculate the 3D backscatter field across London
-            # .shape = (hour, height, lat, lon)
             mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, res, 905, Z='03', allvars=False, hr=hr)
+
+            # # process mod_data if it doesn't yet exist, otherwise read it in from .npy save.
+            # # calculate the 3D backscatter field across London
+            # # .shape = (hour, height, lat, lon)
+            # np_mod_data_savename = model_type + '_mod_data_processed.npy'
+            # if os.path.exists(npy_savedir + np_mod_data_savename) == True:
+            #     mod_data = np.load(npy_savedir + np_mod_data_savename).flat[0]
+            # else:
+            #     mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, res, 905, Z='03', allvars=False, hr=hr)
+            #     np.save(npy_savedir + np_mod_data_savename, mod_data)
+
+            print ''
+            print 'read in mod_data ok!'
+            print 'backscatter shape:'
+            print mod_data['backscatter'].shape
 
             # rotate the lon and lats onto a normal geodetic grid (WGS84) [degrees] and expands lon and lat by 1 so it can
             # be used in plt.pcolormesh() which wants corner edges not center points
             # rotLon2d_deg, rotLat2d_deg = rotate_lon_lat_2D(mod_data['longitude'], mod_data['latitude'], model_type)
     
             # convert lons and lats to distance [km] from the bottom left corner of the grid
-            unrotLon2d, unrotLat2d, unrotLon1d, unrotLat1d= convert_deg_to_km(mod_data['longitude'][lon_range], mod_data['latitude'])
+            unrotLon2d, unrotLat2d, unrotLon1d, unrotLat1d = convert_deg_to_km(mod_data['longitude'], mod_data['latitude'])
     
             # find important days (low wind, high aerosol
             # U wind from ground to 955 m - try to find day with lowest wind values (more local source emissions)
             # alternative - try when murk was high!
-            U = np.sqrt((mod_data['u_wind'][:, :16, :, :]**2.0) + (mod_data['v_wind'][:, :16, :, :]**2.0))
+            # U = np.sqrt((mod_data['u_wind'][:, :16, :, :]**2.0) + (mod_data['v_wind'][:, :16, :, :]**2.0))
             #U_mean[d] = np.nanmean(U)
             #aer_mean[d] = np.nanmean(mod_data['aerosol_for_visibility'][:, :16, :, :])
     
@@ -309,7 +330,7 @@ if __name__ == '__main__':
                 # # Training vector, where n_samples is the number of samples and n_features is the number of features.
                 # # location [lat, lon]
                 # #! Note: import to make sure reshaped axis keep the data in the correct order so X_i(lon_i, lat_i) and not
-                # #   some random lon or lat point. Be careful when stacking and rotating - always do checks agains the
+                # #   some random lon or lat point. Be careful when stacking and rotating - always do checks against the
                 # #   original, input variable! e.g. check with y[30] = [lon[30,0], lat[30,0]]
                 # y = data.flatten()
                 # # data = [col0=lon, col1=lat]
@@ -334,7 +355,7 @@ if __name__ == '__main__':
                 # Ordinary Kriging: 3.1.1 in pykrige documentation
                 # Function fails when given 2D arrays so pass in flattened 1D arrays of the 2D data.
                 OK = OrdinaryKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(),
-                                     variogram_model=variogram_model, nlags=35, weight=True) # verbose=True,enable_plotting=True,
+                                     variogram_model=variogram_model, nlags=1440, weight=True) # verbose=True,enable_plotting=True,
 
  
                 # ax = plt.gca()
@@ -353,7 +374,7 @@ if __name__ == '__main__':
                 # #! list order varies, depending on the variogram_model used!
                 # #! gives back partial sill (full sill - nugget), not the full sill
                 if variogram_model == 'spherical':
-                    range[d, hr_idx, height_idx] = OK.variogram_model_parameters[1]
+                    v_range[d, hr_idx, height_idx] = OK.variogram_model_parameters[1]
 
         # plt.figure()
         # plt.hist(data.flatten(), bins=50)
@@ -365,15 +386,25 @@ if __name__ == '__main__':
         # Plotting
         # ==============================================================================
 
+        # simple save encase everything goes wrong
+        np_savename_day = model_type +'_'+data_var+'_'+day.strftime('%Y%m%d')+'.npy'
+        np_save_dict_day = {'v_range': v_range, 'day': day.strftime('%Y%m%d'), 'model_type':model_type, 'time_match': time_match}
+        np.save(npy_savedir + np_savename_day, np_save_dict_day)
+
         # this day's variables to plot
         day_time = mod_data['time'][:-1]
         day_height = mod_data['level_height'][height_range]
-        day_range = range[d, :, height_range]
+        day_range = v_range[d, :, height_range]
         U_str = '{:.4}'.format(U_mean[d])
         aer_str = '{:.4}'.format(aer_mean[d])
 
         # plot 2D range for today
         fig, ax = twoD_range_one_day(day_time, day_height, day_range, mlh_obs, data_var, U_str, aer_str)
+
+    # save v_range as numpy array
+    np_savename = model_type +'_'+data_var+'_all_cases.npy'
+    np_save_dict = {'v_range': v_range, 'days_iterate': days_iterate, 'model_type':model_type, 'time_match': time_match}
+    np.save(npy_savedir + np_savename, np_save_dict)
 
     # # multiple days
     # time = [i.hour for i in mod_data['time'][:-1]]
@@ -386,20 +417,3 @@ if __name__ == '__main__':
     # plt.savefig(twodRangeCompositeDir +data_var+'_28daymed.png')
 
     print 'END PROGRAM'
-
-
-# # 3D kriging code (currently runs out of memory during...)
-# # testing for 3D kriging (only bot 10 levels):
-# # transpose them so they are the correcy shape:(lon, lat, height) = (35L, 65L, 41L)
-# rotlon3d = np.transpose(np.array([unrotLon2d] * 10), axes=[1, 2, 0])
-# rotlat3d = np.transpose(np.array([unrotLat2d] * 10), axes=[1, 2, 0])
-# rotheight3d = np.transpose(np.array([[mod_data['level_height'][:10]] * unrotLat2d.shape[0]] * unrotLat2d.shape[1]),
-#                            axes=[1, 2, 0])
-
-# # test 3D kriging (bottom 10 levels only)
-# data3d = np.transpose(np.log10(mod_data['backscatter'][t, :10, :, :]), axes=[1, 2, 0])
-
-# # Carry out the kriging process
-# OK3d = OrdinaryKriging3D(rotlon3d.flatten(), rotlat3d.flatten(), rotheight3d.flatten() / 1000.0,
-#                          data3d.flatten(), enable_plotting=True,
-#                          variogram_model='spherical', nlags=20, weight=True, verbose=True)  # verbose=True
