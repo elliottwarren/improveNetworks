@@ -31,7 +31,6 @@ import ceilUtils as ceil
 import FOUtils as FO
 import FOconstants as FOcon
 
-os.system('echo got to l38')
 os.system('echo '+sys.platform)
 
 from pykrige.ok import OrdinaryKriging
@@ -198,14 +197,19 @@ if __name__ == '__main__':
     days_iterate = eu.dateList_to_datetime(daystr)
     
     # import all site names and heights
-    all_sites = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']
+    all_sites = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-E_NK']
+    #     all_sites = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']
     
     # get height information for all the sites
     site_bsc = ceil.extract_sites(all_sites, height_type='agl')
     
     if model_type == '55m':
         max_height_num = 76
-        max_hour_num = 10
+        # max_hour_num = 10
+    
+    # passed in from bash script
+    hr_str = sys.argv[1]
+    hr_int = int(hr_str)
     
     # ==============================================================================
     # Read and process data
@@ -219,162 +223,179 @@ if __name__ == '__main__':
     ceil_metadata = ceil.read_ceil_metadata(ceilmetadatadir, ceilsitefile)
     
     # empty arrays to fill  (day, hour, height)
-    v_range = np.empty((len(days_iterate), max_hour_num, max_height_num))
+    v_range = np.empty((max_height_num))
     v_range[:] = np.nan
-    
-    U_mean = np.empty((len(days_iterate)))
-    U_mean[:] = np.nan
-    
-    aer_mean = np.empty((len(days_iterate)))
-    aer_mean[:] = np.nan
 
-    for d, day in enumerate(days_iterate):
+    # empty arrays to fill  (day, hour, height)
+    sill = np.empty((max_height_num))
+    sill[:] = np.nan
+    
+    # empty arrays to fill  (day, hour, height)
+    nugget = np.empty((max_height_num))
+    nugget[:] = np.nan
 
-        print 'day = ' + day.strftime('%Y-%m-%d')
+    heights_processed = np.empty((max_height_num))
+    heights_processed[:] = np.nan
+
+#     U_mean = np.empty((len(days_iterate)))
+#     U_mean[:] = np.nan
+#     
+#     aer_mean = np.empty((len(days_iterate)))
+#     aer_mean[:] = np.nan
+
+    day = days_iterate[0]
+
+    print 'day = ' + day.strftime('%Y-%m-%d')
+
+    for height_idx in np.arange(max_height_num):
+
+        print 'working on height_idx: '+str(height_idx)
         
-        # times to match to, so the time between days will line up
-        if model_type == 'UKV':
-            start = dt.datetime(day.year, day.month, day.day, 0, 0, 0)
-            end = start + dt.timedelta(days=1) - dt.timedelta(minutes=60)
-            time_match = eu.date_range(start, end, 1, 'hour')
-        else:
-            # start = dt.datetime(day.year, day.month, day.day, 9, 0, 0)
-            start = dt.datetime(day.year, day.month, day.day, 9, 0, 0)
-            end = start + dt.timedelta(hours=max_height_num)
-            time_match = eu.date_range(start, end, 1, 'hour')
+        # # times to match to, so the time between days will line up
+        # if model_type == 'UKV':
+        #     start = dt.datetime(day.year, day.month, day.day, 0, 0, 0)
+        #     end = start + dt.timedelta(days=1) - dt.timedelta(minutes=60)
+        #     time_match = eu.date_range(start, end, 1, 'hour')
+        # else:
+        #     # start = dt.datetime(day.year, day.month, day.day, 9, 0, 0)
+        #     start = dt.datetime(day.year, day.month, day.day, 9, 0, 0)
+        #     end = start + dt.timedelta(hours=max_height_num)
+        #     time_match = eu.date_range(start, end, 1, 'hour')
         
         # directory for today's data
         modDatadir = datadir + model_type + '/London/' + day.strftime('%Y%m%d') + '/'
-
-        for hr_idx, hr in enumerate(time_match):
-
-            mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, res, 905, Z='03', allvars=False, hr=hr)
-
-            # # process mod_data if it doesn't yet exist, otherwise read it in from .npy save.
-            # # calculate the 3D backscatter field across London
-            # # .shape = (hour, height, lat, lon)
-            # np_mod_data_savename = model_type + '_mod_data_processed.npy'
-            # if os.path.exists(npy_savedir + np_mod_data_savename) == True:
-            #     mod_data = np.load(npy_savedir + np_mod_data_savename).flat[0]
-            # else:
-            #     mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, res, 905, Z='03', allvars=False, hr=hr)
-            #     np.save(npy_savedir + np_mod_data_savename, mod_data)
-
-            print ''
-            print 'read in mod_data ok!'
-            print 'backscatter shape:'
-            print mod_data['backscatter'].shape
-
-            # rotate the lon and lats onto a normal geodetic grid (WGS84) [degrees] and expands lon and lat by 1 so it can
-            # be used in plt.pcolormesh() which wants corner edges not center points
-            # rotLon2d_deg, rotLat2d_deg = rotate_lon_lat_2D(mod_data['longitude'], mod_data['latitude'], model_type)
-    
-            # convert lons and lats to distance [km] from the bottom left corner of the grid
-            unrotLon2d, unrotLat2d, unrotLon1d, unrotLat1d = convert_deg_to_km(mod_data['longitude'], mod_data['latitude'])
-    
-            # find important days (low wind, high aerosol
-            # U wind from ground to 955 m - try to find day with lowest wind values (more local source emissions)
-            # alternative - try when murk was high!
-            # U = np.sqrt((mod_data['u_wind'][:, :16, :, :]**2.0) + (mod_data['v_wind'][:, :16, :, :]**2.0))
-            #U_mean[d] = np.nanmean(U)
-            #aer_mean[d] = np.nanmean(mod_data['aerosol_for_visibility'][:, :16, :, :])
-    
-            # read in MLH data
-            mlh_obs = ceil.read_all_ceils(day, site_bsc, ceilDatadir, 'MLH', timeMatch=time_match)
-    
-            # ==============================================================================
-            # Kriging
-            # ==============================================================================
-            # .shape(time, height, lat, lon) # definately lat then lon ...
-    
-            # for hr_idx, hr in enumerate(mod_data['time'][:-1]): # ignore midnight next day
-
-            # read in mod_data for this hour
+        
+        #for hr_idx, hr in enumerate(time_match):
             
-            # any prep....
+        # use hour given in bash script
+        hr = dt.datetime(day.year, day.month, day.day, hr_int, 0, 0)
 
-            for height_idx, height_i in enumerate(mod_data['level_height'][height_range]): # [:20]
-                print 'h = ' + str(height_i)
+        mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, res, 905, Z='03', allvars=False, hr=hr, height_extract_idx=height_idx)
 
+        # store which height is being processed for .npy save later
+        heights_processed[height_idx] = mod_data['level_height'][0]
+        
+        # # process mod_data if it doesn't yet exist, otherwise read it in from .npy save.
+        # # calculate the 3D backscatter field across London
+        # # .shape = (hour, height, lat, lon)
+        # np_mod_data_savename = model_type + '_mod_data_processed.npy'
+        # if os.path.exists(npy_savedir + np_mod_data_savename) == True:
+        #     mod_data = np.load(npy_savedir + np_mod_data_savename).flat[0]
+        # else:
+        #     mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, res, 905, Z='03', allvars=False, hr=hr)
+        #     np.save(npy_savedir + np_mod_data_savename, mod_data)
 
-                # extract 2D cross section for this time
-                # just London area
-                if model_type == 'UKV':
-                    if data_var == 'backscatter':# or
-                        data = np.log10(mod_data[data_var][hr_idx, height_idx, :, lon_range]) # [-35:]
-                        #print 'data logged'
-                    elif data_var == 'specific_humidity':
-                        data = np.log10(mod_data[data_var][hr_idx, height_idx, :, lon_range]*1e3) # [g kg-1]
-                    else:
-                        data = mod_data[data_var][hr_idx, height_idx, :, lon_range]
-                else: # 55m
-                    if data_var == 'backscatter':
-                        data = np.log10(mod_data[data_var][0, height_idx, :, :]) # [-35:]
-                        
+        print ''
+        print 'read in mod_data ok!'
+        print 'backscatter shape:'
+        print mod_data['backscatter'].shape
 
-                #ToDo Find best model to fit on the variogram, then pass best model into the main OrdinaryKriging() function
-                # use the kriging guide to help with this
-                #ToDo Use OK.update_variogram_model to save computational resources
+        os.system('echo mod_data keys: '+str(mod_data.keys()))
 
-                # # test which model type to fit to the data using cross validation
-                # # PyKrige documentation 4.1: Krige CV
-                # param_dict = {"method": ["ordinary"],
-                #               "variogram_model": ["linear", "power", "spherical"],
-                #               "nlags": [20],
-                #               # "weight": [True, False]
-                #               }
-                #
-                # estimator = GridSearchCV(Krige(), param_dict, verbose=True)
+        # rotate the lon and lats onto a normal geodetic grid (WGS84) [degrees] and expands lon and lat by 1 so it can
+        # be used in plt.pcolormesh() which wants corner edges not center points
+        # rotLon2d_deg, rotLat2d_deg = rotate_lon_lat_2D(mod_data['longitude'], mod_data['latitude'], model_type)
 
-                # # data - needs to be X : array-like, shape = [n_samples, n_features]
-                # # Training vector, where n_samples is the number of samples and n_features is the number of features.
-                # # location [lat, lon]
-                # #! Note: import to make sure reshaped axis keep the data in the correct order so X_i(lon_i, lat_i) and not
-                # #   some random lon or lat point. Be careful when stacking and rotating - always do checks against the
-                # #   original, input variable! e.g. check with y[30] = [lon[30,0], lat[30,0]]
-                # y = data.flatten()
-                # # data = [col0=lon, col1=lat]
-                # X = np.stack((unrotLon2d.flatten(), unrotLat2d.flatten()), axis=1)
-                #
-                # estimator.fit(X=X, y=y)
+        # convert lons and lats to distance [km] from the bottom left corner of the grid
+        unrotLon2d, unrotLat2d, _, _ = convert_deg_to_km(mod_data['longitude'], mod_data['latitude'])
 
-                # # print results
-                # if hasattr(estimator, 'best_score_'):
-                #     print('best_score R2 = {:.3f}'.format(estimator.best_score_))
-                #     print('best_params = ', estimator.best_params_)
-                #     print('\nCV results::')
-                # if hasattr(estimator, 'cv_results_'):
-                #     for key in ['mean_test_score', 'mean_train_score',
-                #                 'param_method', 'param_variogram_model']:
-                #         print(' - {} : {}'.format(key, estimator.cv_results_[key]))
+        # find important days (low wind, high aerosol
+        # U wind from ground to 955 m - try to find day with lowest wind values (more local source emissions)
+        # alternative - try when murk was high!
+        # U = np.sqrt((mod_data['u_wind'][:, :16, :, :]**2.0) + (mod_data['v_wind'][:, :16, :, :]**2.0))
+        #U_mean[d] = np.nanmean(U)
+        #aer_mean[d] = np.nanmean(mod_data['aerosol_for_visibility'][:, :16, :, :])
+
+        # read in MLH data
+        #mlh_obs = ceil.read_all_ceils(day, site_bsc, ceilDatadir, 'MLH', timeMatch=time_match)
+
+        # ==============================================================================
+        # Kriging
+        # ==============================================================================
+        # .shape(time, height, lat, lon) # definately lat then lon ...
+
+        # for hr_idx, hr in enumerate(mod_data['time'][:-1]): # ignore midnight next day
+
+        # read in mod_data for this hour
+        
+        # any prep....
+
+        # height_idx = 0; height_i = mod_data['level_height'][0]
 
 
-                # choose variogram model based on cross validation test reslts
-                variogram_model = 'spherical'
+        # extract 2D cross section for this time
+        # just London area
+        if data_var == 'backscatter':
+            data = np.log10(mod_data[data_var][0, 0, :, :])
+        else:
+            data = mod_data[data_var][0, 0, :, :]
+                
 
-                # Ordinary Kriging: 3.1.1 in pykrige documentation
-                # Function fails when given 2D arrays so pass in flattened 1D arrays of the 2D data.
-                OK = OrdinaryKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(),
-                                     variogram_model=variogram_model, nlags=1440, weight=True) # verbose=True,enable_plotting=True,
+        #ToDo Find best model to fit on the variogram, then pass best model into the main OrdinaryKriging() function
+        # use the kriging guide to help with this
+        #ToDo Use OK.update_variogram_model to save computational resources
 
- 
-                # ax = plt.gca()
-                # plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height=' + str(mod_data['level_height'][height_idx]) + 'm')
-                # ax.set_xlabel('Distance [km]')
-                # ax.set_ylabel('Semi-variance')
-                # savesubdir = variogramsavedir + hr.strftime('%Y-%m-%d') + '/'
-                # savename = hr.strftime('%Y-%m-%d_%H') +  '_{:05.0f}'.format(mod_data['level_height'][height_idx]) + 'm_variogram'
-                #
-                # if os.path.exists(savesubdir) == False:
-                #     os.mkdir(savesubdir)
-                # plt.savefig(savesubdir + savename)
-                # plt.close()
+        # # test which model type to fit to the data using cross validation
+        # # PyKrige documentation 4.1: Krige CV
+        # param_dict = {"method": ["ordinary"],
+        #               "variogram_model": ["linear", "power", "spherical"],
+        #               "nlags": [20],
+        #               # "weight": [True, False]
+        #               }
+        #
+        # estimator = GridSearchCV(Krige(), param_dict, verbose=True)
 
-                # # look at variogram_model_parameters to find the nugget, sill etc.
-                # #! list order varies, depending on the variogram_model used!
-                # #! gives back partial sill (full sill - nugget), not the full sill
-                if variogram_model == 'spherical':
-                    v_range[d, hr_idx, height_idx] = OK.variogram_model_parameters[1]
+        # # data - needs to be X : array-like, shape = [n_samples, n_features]
+        # # Training vector, where n_samples is the number of samples and n_features is the number of features.
+        # # location [lat, lon]
+        # #! Note: import to make sure reshaped axis keep the data in the correct order so X_i(lon_i, lat_i) and not
+        # #   some random lon or lat point. Be careful when stacking and rotating - always do checks against the
+        # #   original, input variable! e.g. check with y[30] = [lon[30,0], lat[30,0]]
+        # y = data.flatten()
+        # # data = [col0=lon, col1=lat]
+        # X = np.stack((unrotLon2d.flatten(), unrotLat2d.flatten()), axis=1)
+        #
+        # estimator.fit(X=X, y=y)
+
+        # # print results
+        # if hasattr(estimator, 'best_score_'):
+        #     print('best_score R2 = {:.3f}'.format(estimator.best_score_))
+        #     print('best_params = ', estimator.best_params_)
+        #     print('\nCV results::')
+        # if hasattr(estimator, 'cv_results_'):
+        #     for key in ['mean_test_score', 'mean_train_score',
+        #                 'param_method', 'param_variogram_model']:
+        #         print(' - {} : {}'.format(key, estimator.cv_results_[key]))
+
+
+        # choose variogram model based on cross validation test reslts
+        variogram_model = 'spherical'
+
+        # Ordinary Kriging: 3.1.1 in pykrige documentation
+        # Function fails when given 2D arrays so pass in flattened 1D arrays of the 2D data.
+        OK = OrdinaryKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(),
+                             variogram_model=variogram_model, nlags=1440, weight=True, enable_plotting=True) # verbose=True,enable_plotting=True,
+
+
+        ax = plt.gca()
+        plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height=' + str(mod_data['level_height'][0]) + 'm')
+        ax.set_xlabel('Distance [km]')
+        ax.set_ylabel('Semi-variance')
+        savesubdir = variogramsavedir + hr.strftime('%Y-%m-%d') + '/'
+        savename = hr.strftime('%Y-%m-%d_%H') +  '_{:05.0f}'.format(mod_data['level_height'][0]) + 'm_variogram'
+        
+        if os.path.exists(savesubdir) == False:
+            os.mkdir(savesubdir)
+        plt.savefig(savesubdir + savename)
+        plt.close()
+
+        # # look at variogram_model_parameters to find the nugget, sill etc.
+        # #! list order varies, depending on the variogram_model used!
+        # #! gives back partial sill (full sill - nugget), not the full sill
+        if variogram_model == 'spherical':
+             sill[height_idx] = OK.variogram_model_parameters[0]
+             v_range[height_idx] = OK.variogram_model_parameters[1]
+             nugget[height_idx] = OK.variogram_model_parameters[2]
 
         # plt.figure()
         # plt.hist(data.flatten(), bins=50)
@@ -386,25 +407,21 @@ if __name__ == '__main__':
         # Plotting
         # ==============================================================================
 
-        # simple save encase everything goes wrong
-        np_savename_day = model_type +'_'+data_var+'_'+day.strftime('%Y%m%d')+'.npy'
-        np_save_dict_day = {'v_range': v_range, 'day': day.strftime('%Y%m%d'), 'model_type':model_type, 'time_match': time_match}
-        np.save(npy_savedir + np_savename_day, np_save_dict_day)
+    # simple save encase everything goes wrong
+    np_savename_hr = model_type +'_'+data_var+'_'+hr.strftime('%Y%m%d_%H')+'.npy'
+    np_save_dict_hr = {'v_range': v_range, 'sill':sill, 'nugget':nugget, 
+                        'day': day.strftime('%Y%m%d'), 'model_type':model_type, 'hr': hr, 'data_var':data_var, 'heights': heights_processed}
+    np.save(npy_savedir + np_savename_hr, np_save_dict_hr)
 
-        # this day's variables to plot
-        day_time = mod_data['time'][:-1]
-        day_height = mod_data['level_height'][height_range]
-        day_range = v_range[d, :, height_range]
-        U_str = '{:.4}'.format(U_mean[d])
-        aer_str = '{:.4}'.format(aer_mean[d])
+    # # this day's variables to plot
+    #day_time = mod_data['time'][:-1]
+    #day_height = mod_data['level_height'][height_range]
+    #day_range = v_range[d, :, height_range]
+    #U_str = '{:.4}'.format(U_mean[d])
+    #aer_str = '{:.4}'.format(aer_mean[d])
 
-        # plot 2D range for today
-        fig, ax = twoD_range_one_day(day_time, day_height, day_range, mlh_obs, data_var, U_str, aer_str)
-
-    # save v_range as numpy array
-    np_savename = model_type +'_'+data_var+'_all_cases.npy'
-    np_save_dict = {'v_range': v_range, 'days_iterate': days_iterate, 'model_type':model_type, 'time_match': time_match}
-    np.save(npy_savedir + np_savename, np_save_dict)
+    # plot 2D range for today
+    #fig, ax = twoD_range_one_day(day_time, day_height, day_range, mlh_obs, data_var, U_str, aer_str)
 
     # # multiple days
     # time = [i.hour for i in mod_data['time'][:-1]]
