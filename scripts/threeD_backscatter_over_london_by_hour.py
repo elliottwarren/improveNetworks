@@ -13,6 +13,7 @@ import sys
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/Utils') #aerFO
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ellUtils') # general utils
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ceilUtils') # ceil utils
+sys.path.append('/home/mm0100/ewarren/miniconda2/lib/python2.7/site-packages')
 
 import matplotlib
 matplotlib.use('Agg') # needed as SPICE does not have a monitor and will crash otherwise if plotting is used
@@ -26,6 +27,9 @@ import os
 import math
 import datetime as dt
 
+import dask.multiprocessing
+import dask.array as da
+
 import ellUtils as eu
 import ceilUtils as ceil
 import FOUtils as FO
@@ -34,6 +38,8 @@ import FOconstants as FOcon
 os.system('echo '+sys.platform)
 
 from pykrige.ok import OrdinaryKriging
+from pykrige.core import _calculate_variogram_model
+from pykrige import variogram_models
 # from pykrige.uk import UniversalKriging
 # from pykrige.ok3d import OrdinaryKriging3D
 # from pykrige.rk import Krige
@@ -87,11 +93,11 @@ def convert_deg_to_km(longitude, latitude):
 
     r = 6370.0  # [km] radius of Earth
     c = 2.0 * math.pi * r  # [km] circumference of Earth
-
+    
     # bottom left grid cell
     lon_0 = longitude[0]
     lat_0 = latitude[0]
-
+    
     # Empty arrays to fill
     rotlon_km = np.empty(longitude.shape)
     rotlon_km[:] = np.nan
@@ -186,8 +192,8 @@ if __name__ == '__main__':
     datadir = os.environ.get('DATADIR') + '/suite_forecasts/'
     ceilDatadir = os.environ.get('DATADIR') + '/MLH/'
     ceilmetadatadir = os.environ.get('DATADIR') + '/metadata/'
-    variogramsavedir = maindir + 'figures/variograms/'
-    twodrangedir = maindir + 'figures/2D_range/'
+    variogramsavedir = maindir + 'figures/variograms/'+model_type+'/'
+    twodrangedir = maindir + 'figures/2D_range/'+model_type+'/'
     npy_savedir = os.environ.get('DATADIR') + '/npy/'
     
     # intial test case
@@ -225,7 +231,7 @@ if __name__ == '__main__':
     # empty arrays to fill  (day, hour, height)
     v_range = np.empty((max_height_num))
     v_range[:] = np.nan
-
+    
     # empty arrays to fill  (day, hour, height)
     sill = np.empty((max_height_num))
     sill[:] = np.nan
@@ -233,21 +239,27 @@ if __name__ == '__main__':
     # empty arrays to fill  (day, hour, height)
     nugget = np.empty((max_height_num))
     nugget[:] = np.nan
-
+    
     heights_processed = np.empty((max_height_num))
     heights_processed[:] = np.nan
-
-#     U_mean = np.empty((len(days_iterate)))
-#     U_mean[:] = np.nan
-#     
-#     aer_mean = np.empty((len(days_iterate)))
-#     aer_mean[:] = np.nan
-
+    
+    #     U_mean = np.empty((len(days_iterate)))
+    #     U_mean[:] = np.nan
+    #     
+    #     aer_mean = np.empty((len(days_iterate)))
+    #     aer_mean[:] = np.nan
+    
     day = days_iterate[0]
 
     print 'day = ' + day.strftime('%Y-%m-%d')
 
     for height_idx in np.arange(max_height_num):
+
+        # date directory save for variogram
+        savesubdir = variogramsavedir + day.strftime('%Y%m%d')
+        if os.path.exists(savesubdir) == False:
+            os.mkdir(savesubdir)
+
 
         print 'working on height_idx: '+str(height_idx)
         
@@ -269,11 +281,18 @@ if __name__ == '__main__':
             
         # use hour given in bash script
         hr = dt.datetime(day.year, day.month, day.day, hr_int, 0, 0)
-
+        
         mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, res, 905, Z='03', allvars=False, hr=hr, height_extract_idx=height_idx)
-
+        
         # store which height is being processed for .npy save later
         heights_processed[height_idx] = mod_data['level_height'][0]
+        
+        # reduce domain size to match UKV extract
+        # domain edges found using eu.nearest compared to the UKV extract domain edges
+        if model_type == '55m':
+            mod_data['longitude'] = mod_data['longitude'][293:1213]
+            mod_data['latitude'] = mod_data['latitude'][170:1089]
+            mod_data[data_var] = mod_data[data_var][:, :, 170:1089, 293:1213]
         
         # # process mod_data if it doesn't yet exist, otherwise read it in from .npy save.
         # # calculate the 3D backscatter field across London
@@ -368,13 +387,144 @@ if __name__ == '__main__':
         #         print(' - {} : {}'.format(key, estimator.cv_results_[key]))
 
 
+        # Create the semivariance and lags
+        # appending dmax += 0.001 ensure maximum bin is included
+        nlags = np.max(list(data.shape))
+        dmin = unrotLat2d[1,0] # equidistant grid, therefore the first box across ([1,0]) will have the minimum distance 
+        dmax = np.sqrt((np.amax(unrotLat2d)**2) + (np.amax(unrotLon2d)**2)) # [km] - diag distance to opposite corner of domain
+        
+        dd = (dmax - dmin) / nlags # average nlag spacing
+        bins = [dmin + n * dd for n in range(nlags)]
+        dmax += 0.001 
+        bins.append(dmax)
+        
+        # setup arrays to be filled
+        lags = np.zeros(nlags) # average actual distance between points within each lag bin (e.g could be 1.31 km for bin range 1 - 2 km)
+        
+        # set up semivariance array ready
+        semivariance = np.zeros(nlags) # semivariance within each lag bin
+        semivariance[:] = np.nan
+        
+        # sample size for each lag. Start at 0 and add them up as more idx pairs are found
+        m = np.zeros(nlags)
+        
+        # maximum idx position for each dimension
+        idx_max = [j - 1 for j in data.shape]
+        
+        
+        
+        # create euclidean distance matrix (from point [0,0])
+        # only creates distances for one quadrant (top right) effectively
+        distance = np.sqrt((unrotLat2d**2) + (unrotLon2d**2))
+        
+        # find idx linked to this h
+        for h, bin_start in enumerate(bins[:-1]):
+            
+            print ' h = '+str(h)
+            
+            bin_end = bins[h+1]
+            
+            # idx relative to the current position [0,0] (just top right quadrant idx)
+            idx = list(np.where((distance >= bin_start) & (distance < bin_end)))
+
+            # combine 4 versions of idx that would represent all 4 quadrants and not just top right from the origin
+            idx_origin = [np.hstack([idx[0], -idx[0], idx[0], -idx[0]]), np.hstack([idx[1], -idx[1], -idx[1], idx[1]])]
+            # plt.scatter(idx_all[0], idx_all[1]) to see that it centre is over 0,0
+            
+        
+            
+#         def calc_semivariance(data, bins, nlags):
+#         
+#             """
+#             Calculate the semivariance for the 2D data slice. Currently evenly spaced with nlags = domain width
+#             
+#             :param data (2D np.array): data to calculate semivariance from
+#             :param bins (1D np.array): bin edges 
+#             :param nlags (int): number of lags 
+#             
+#             """
+            
+
+            
+            # square_differences - part of the equation for semi_variance
+            # add onto 0, as there will be too many values to keep in an array and sum at the end
+            square_diff = 0
+            
+            # paired distance differernces - need to find out average distance in this bin
+            paired_dist_diff = 0
+            
+            for z_idx, z_i in np.ndenumerate(data):
+                
+                # adjust idx origin for this z_idx
+                idx_from_z_idx = [z_idx[0] + idx_origin[0], z_idx[1] + idx_origin[1]]
+                                                       
+                
+                # remove idx positions past the edges of the domain (below 0 or above the last idx for the data array)
+                # split if statements up to reduce computational expense
+                # super inefficient... 
+                idx_pairs_keep = []
+                for idx_i in idx_pairs_all:
+                    if idx_i[0] >= 0:
+                        if idx_i[0] <= idx_max[0]:
+                            if idx_i[1] >= 0:
+                                if idx_i[1] <= idx_max[1]:
+                                    idx_pairs_keep += [idx_i]
+                        
+                # add on the number of pairs for z_i to the total in this lag
+                m[h] += len(idx_pairs_keep)
+                
+                # calculate square difference between z_i and paired values. Add to the square_diff list to be summed after
+                # iterating through all z_i
+                square_diff += np.sum([(z_i-data[idx_i[0], idx_i[1]])**2 for idx_i in idx_pairs_keep])
+                
+                # find paired distances between all points
+                lat_diffs = [unrotLat2d[z_idx[0], z_idx[1]] - unrotLat2d[idx_i[0], idx_i[1]] for idx_i in idx_pairs_keep]
+                lon_diffs = [unrotLon2d[z_idx[0], z_idx[1]] - unrotLon2d[idx_i[0], idx_i[1]] for idx_i in idx_pairs_keep]
+                paired_dist_diff += np.sum([np.sqrt((lat_diff_i**2) + (lon_diff_i**2)) for (lat_diff_i, lon_diff_i) in zip(lat_diffs, lon_diffs)])
+                
+            # finish the semivariance calculation (semivariance = effectivly half of the average square_diff)
+            semivariance[h] = 0.5 * square_diff / m[h]
+            lags[h] = paired_dist_diff / m[h] # /m finishes calculation of the mean
+                                
+        # return semivariance, lags, m
+        # 
+        # semivariance, lags, m = calc_semivariance(data, bins, nlags)
+
+        
         # choose variogram model based on cross validation test reslts
         variogram_model = 'spherical'
+        variogram_function = variogram_models.spherical_variogram_model
+        weight = True
 
-        # Ordinary Kriging: 3.1.1 in pykrige documentation
-        # Function fails when given 2D arrays so pass in flattened 1D arrays of the 2D data.
-        OK = OrdinaryKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(),
-                             variogram_model=variogram_model, nlags=1440, weight=True, enable_plotting=True) # verbose=True,enable_plotting=True,
+        # with the bins and semivariance, do the fitting
+        variogram_model_parameters = \
+                _calculate_variogram_model(lags, semivariance, variogram_model,
+                                           variogram_function, weight)
+
+        # plot variogram
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.plot(lags, semivariance, 'r*')
+        ax.plot(lags,
+                variogram_function(variogram_model_parameters,
+                                        lags), 'k-')
+
+        ax = plt.gca()
+        plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height=' + str(mod_data['level_height'][0]) + 'm')
+        ax.set_xlabel('Distance [km]')
+        ax.set_ylabel('Semi-variance')
+        savesubdir = variogramsavedir + hr.strftime('%Y-%m-%d') + '/'
+        savename = hr.strftime('%Y-%m-%d_%H') +  '_{:05.0f}'.format(mod_data['level_height'][0]) + 'm_variogram'
+        
+        if os.path.exists(savesubdir) == False:
+            os.mkdir(savesubdir)
+        plt.savefig(savesubdir + savename)
+        plt.close()
+
+#         # Ordinary Kriging: 3.1.1 in pykrige documentation
+#         # Function fails when given 2D arrays so pass in flattened 1D arrays of the 2D data.
+#         OK = OrdinaryKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(),
+#                              variogram_model=variogram_model, nlags=1440, weight=True, enable_plotting=True) # verbose=True,enable_plotting=True,
 
 
         ax = plt.gca()
