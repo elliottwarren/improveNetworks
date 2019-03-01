@@ -29,6 +29,7 @@ import datetime as dt
 
 import dask.multiprocessing
 import dask.array as da
+from dask import compute, delayed
 
 import ellUtils as eu
 import ceilUtils as ceil
@@ -160,8 +161,95 @@ def twoD_range_one_day(day_time, day_height, day_range, mlh_obs, data_var, U_str
 
     return fig, ax
 
+@delayed
+def square_differences_sum(z_idx, z_i, data, idx_origin, idx_max):
 
+    """
+    Compute the square differences between z_i and all pairs at this lag, where idx_origin(lag)
+    """
 
+    @delayed
+    def square_diff_i(z_i, z_i_h):
+        return  (z_i-z_i_h)**2
+    
+    #@delayed    
+    #def sum_list(args):
+    #    return sum(args)
+
+    # adjust idx origin for this z_idx
+    idx_from_z_idx = [z_idx[0] + idx_origin[0], z_idx[1] + idx_origin[1]]                          
+
+    # remove idx positions past the edges of the domain (below 0 or above the last idx for the data array)
+    # split if statements up to reduce computational expense
+    # super inefficient... 
+    idx_pairs_keep = []
+    for idx_i in idx_pairs_all:
+        if idx_i[0] >= 0:
+            if idx_i[0] <= idx_max[0]:
+                if idx_i[1] >= 0:
+                    if idx_i[1] <= idx_max[1]:
+                        idx_pairs_keep += [idx_i]
+            
+    # add on the number of pairs for z_i to the total in this lag
+    m_i = len(idx_pairs_keep)
+    
+    # calculate square difference between z_i and paired values. Add to the square_diff list to be summed after
+    # iterating through all z_i
+#     square_diff = np.sum([(z_i-data[idx_i[0], idx_i[1]])**2 for idx_i in idx_pairs_keep])
+    square_diff_sum_i = sum([square_diff_i(z_i, data[idx_i[0], idx_i[1]]) for idx_i in idx_pairs_keep])
+    
+    # find paired distances between all points
+    #lat_diffs = [unrotLat2d[z_idx[0], z_idx[1]] - unrotLat2d[idx_i[0], idx_i[1]] for idx_i in idx_pairs_keep]
+    #lon_diffs = [unrotLon2d[z_idx[0], z_idx[1]] - unrotLon2d[idx_i[0], idx_i[1]] for idx_i in idx_pairs_keep]
+    #paired_dist_diff += np.sum([np.sqrt((lat_diff_i**2) + (lon_diff_i**2)) for (lat_diff_i, lon_diff_i) in zip(lat_diffs, lon_diffs)])
+
+    return square_diff_sum_i, m_i
+
+@delayed
+def calc_semivariance(data, distance, idx_max, h, bin_start):
+
+    """
+    Calculate the semivariance for this lag (h)
+    """
+
+    @delayed
+    def calc_semivariance_h(square_diff_sum_h_total, m_h_total):
+        return 0.5 * square_diff_sum_h_total / m_h_total
+
+    print ' h = '+str(h)
+    
+    bin_end = bins[h+1]
+    
+    # idx relative to the current position [0,0] (just top right quadrant idx)
+    idx = list(np.where((distance >= bin_start) & (distance < bin_end)))
+
+    # combine 4 versions of idx that would represent all 4 quadrants and not just top right from the origin
+    idx_origin = [np.hstack([idx[0], -idx[0], idx[0], -idx[0]]), np.hstack([idx[1], -idx[1], -idx[1], idx[1]])]
+    # plt.scatter(idx_all[0], idx_all[1]) to see that it centre is over 0,0
+    
+    
+    # array ready to be filled with the sum of square differences (and number of pairs) for every z_i in data, for this lag (h)
+    # 0 be deault = no effect on end summation
+    square_diff_sum_h = np.zeros((data.shape))
+    m_h = np.zeros((data.shape))
+    
+    for z_idx, z_i in np.ndenumerate(data):
+        
+        # calculate the sum of square differences and the total of pairs for z_i (@delayed)
+        square_diff_sum_h[z_idx], m_h[z_idx] = square_differences_sum(z_idx, z_i, data, idx_origin, idx_max)
+    
+    # sum up the square differences and m across all z_i for this lag (h) (@delayed)
+    square_diff_sum_h_total = delayed(sum)(square_diff_sum_h)
+    m_h_total = delayed(sum)(m_h)
+
+      
+    # finish the semivariance calculation (semivariance = effectivly half of the average square_diff)  
+    semivariance_h = calc_semivariance_h(square_diff_sum_h_total, m_h_total)
+
+    #lags[h] = paired_dist_diff / m[h] # /m mean distance within the lag
+    m_h_total # final sample size at each lag
+    
+    return semivariance_h, m_h_total
 
 if __name__ == '__main__':
 
@@ -411,81 +499,20 @@ if __name__ == '__main__':
         # maximum idx position for each dimension
         idx_max = [j - 1 for j in data.shape]
         
-        
-        
         # create euclidean distance matrix (from point [0,0])
         # only creates distances for one quadrant (top right) effectively
         distance = np.sqrt((unrotLat2d**2) + (unrotLon2d**2))
         
         # find idx linked to this h
         for h, bin_start in enumerate(bins[:-1]):
-            
-            print ' h = '+str(h)
-            
-            bin_end = bins[h+1]
-            
-            # idx relative to the current position [0,0] (just top right quadrant idx)
-            idx = list(np.where((distance >= bin_start) & (distance < bin_end)))
-
-            # combine 4 versions of idx that would represent all 4 quadrants and not just top right from the origin
-            idx_origin = [np.hstack([idx[0], -idx[0], idx[0], -idx[0]]), np.hstack([idx[1], -idx[1], -idx[1], idx[1]])]
-            # plt.scatter(idx_all[0], idx_all[1]) to see that it centre is over 0,0
-            
         
-            
-#         def calc_semivariance(data, bins, nlags):
-#         
-#             """
-#             Calculate the semivariance for the 2D data slice. Currently evenly spaced with nlags = domain width
-#             
-#             :param data (2D np.array): data to calculate semivariance from
-#             :param bins (1D np.array): bin edges 
-#             :param nlags (int): number of lags 
-#             
-#             """
-            
-
-            
-            # square_differences - part of the equation for semi_variance
-            # add onto 0, as there will be too many values to keep in an array and sum at the end
-            square_diff = 0
-            
-            # paired distance differernces - need to find out average distance in this bin
-            paired_dist_diff = 0
-            
-            for z_idx, z_i in np.ndenumerate(data):
-                
-                # adjust idx origin for this z_idx
-                idx_from_z_idx = [z_idx[0] + idx_origin[0], z_idx[1] + idx_origin[1]]
-                                                       
-                
-                # remove idx positions past the edges of the domain (below 0 or above the last idx for the data array)
-                # split if statements up to reduce computational expense
-                # super inefficient... 
-                idx_pairs_keep = []
-                for idx_i in idx_pairs_all:
-                    if idx_i[0] >= 0:
-                        if idx_i[0] <= idx_max[0]:
-                            if idx_i[1] >= 0:
-                                if idx_i[1] <= idx_max[1]:
-                                    idx_pairs_keep += [idx_i]
-                        
-                # add on the number of pairs for z_i to the total in this lag
-                m[h] += len(idx_pairs_keep)
-                
-                # calculate square difference between z_i and paired values. Add to the square_diff list to be summed after
-                # iterating through all z_i
-                square_diff += np.sum([(z_i-data[idx_i[0], idx_i[1]])**2 for idx_i in idx_pairs_keep])
-                
-                # find paired distances between all points
-                lat_diffs = [unrotLat2d[z_idx[0], z_idx[1]] - unrotLat2d[idx_i[0], idx_i[1]] for idx_i in idx_pairs_keep]
-                lon_diffs = [unrotLon2d[z_idx[0], z_idx[1]] - unrotLon2d[idx_i[0], idx_i[1]] for idx_i in idx_pairs_keep]
-                paired_dist_diff += np.sum([np.sqrt((lat_diff_i**2) + (lon_diff_i**2)) for (lat_diff_i, lon_diff_i) in zip(lat_diffs, lon_diffs)])
-                
-            # finish the semivariance calculation (semivariance = effectivly half of the average square_diff)
-            semivariance[h] = 0.5 * square_diff / m[h]
-            lags[h] = paired_dist_diff / m[h] # /m finishes calculation of the mean
-                                
+            compute_map = calc_semivariance(data, distance, idx_max, h, bin_start)
+        
+            semivariance[h], m[h] = compute_map.compute()
+        
+        
+        # where to put compute?
+              
         # return semivariance, lags, m
         # 
         # semivariance, lags, m = calc_semivariance(data, bins, nlags)
