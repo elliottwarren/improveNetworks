@@ -28,7 +28,8 @@ import math
 import datetime as dt
 
 import dask.multiprocessing
-import dask.array as da
+import dask
+#import dask.array as da
 from dask import compute, delayed
 
 import ellUtils as eu
@@ -168,7 +169,7 @@ def square_differences_sum(z_idx, z_i, data, idx_origin, idx_max):
     Compute the square differences between z_i and all pairs at this lag, where idx_origin(lag)
     """
 
-    @delayed
+    #@delayed
     def square_diff_i(z_i, z_i_h):
         return  (z_i-z_i_h)**2
     
@@ -183,12 +184,12 @@ def square_differences_sum(z_idx, z_i, data, idx_origin, idx_max):
     # split if statements up to reduce computational expense
     # super inefficient... 
     idx_pairs_keep = []
-    for idx_i in idx_pairs_all:
+    for idx_i in idx_from_z_idx:
         if idx_i[0] >= 0:
             if idx_i[0] <= idx_max[0]:
                 if idx_i[1] >= 0:
                     if idx_i[1] <= idx_max[1]:
-                        idx_pairs_keep += [idx_i]
+                        idx_pairs_keep.append(idx_i)
             
     # add on the number of pairs for z_i to the total in this lag
     m_i = len(idx_pairs_keep)
@@ -205,14 +206,15 @@ def square_differences_sum(z_idx, z_i, data, idx_origin, idx_max):
 
     return square_diff_sum_i, m_i
 
-@delayed
+#@delayed
+
 def calc_semivariance(data, distance, idx_max, h, bin_start):
 
     """
     Calculate the semivariance for this lag (h)
     """
 
-    @delayed
+    #@delayed
     def calc_semivariance_h(square_diff_sum_h_total, m_h_total):
         return 0.5 * square_diff_sum_h_total / m_h_total
 
@@ -220,34 +222,67 @@ def calc_semivariance(data, distance, idx_max, h, bin_start):
     
     bin_end = bins[h+1]
     
-    # idx relative to the current position [0,0] (just top right quadrant idx)
+    # idx relative to the current position [0,0] (just top right quadrant idx of the circle)
     idx = list(np.where((distance >= bin_start) & (distance < bin_end)))
 
     # combine 4 versions of idx that would represent all 4 quadrants and not just top right from the origin
+    # plt.scatter(idx_origin[0], idx_origin[1]) to see that it centres over 0,0
     idx_origin = [np.hstack([idx[0], -idx[0], idx[0], -idx[0]]), np.hstack([idx[1], -idx[1], -idx[1], idx[1]])]
-    # plt.scatter(idx_all[0], idx_all[1]) to see that it centre is over 0,0
-    
     
     # array ready to be filled with the sum of square differences (and number of pairs) for every z_i in data, for this lag (h)
     # 0 be deault = no effect on end summation
-    square_diff_sum_h = np.zeros((data.shape))
-    m_h = np.zeros((data.shape))
+    #square_diff_sum_h = da.zeros((data.shape), chunks=1)
+    #m_h = da.zeros((data.shape), chunks=1)
+    
+    square_diff_sum_h = []
+    m_h = []
+    results = []
     
     for z_idx, z_i in np.ndenumerate(data):
         
         # calculate the sum of square differences and the total of pairs for z_i (@delayed)
-        square_diff_sum_h[z_idx], m_h[z_idx] = square_differences_sum(z_idx, z_i, data, idx_origin, idx_max)
+#         square_diff_sum_h[z_idx], m_h[z_idx] = square_differences_sum(z_idx, z_i, data, idx_origin, idx_max)
+        c = square_differences_sum(z_idx, z_i, data, idx_origin, idx_max)
+        
+        results.append(c)
+        #a = computation_map.compute()
+#         print type(a)
+#         print len(a)
+#         print dir(a)
+#         print a[0]
+#         square_diff_sum_h[z_idx[0], z_idx[1]] = a[0]
+#         m_h[z_idx[0], z_idx[1]] = a[1]
     
-    # sum up the square differences and m across all z_i for this lag (h) (@delayed)
-    square_diff_sum_h_total = delayed(sum)(square_diff_sum_h)
-    m_h_total = delayed(sum)(m_h)
+#         square_diff_sum_h.append(a[0])
+#         m_h.append(a[1])
+        #square_diff_sum_h.append(c[0])
+        #m_h.append(c[1])
+        #print z_idx
+    
+    results = dask.compute(*results)
+    square_diff_sum_h = results[0]
+    m_h = results[1] 
+    
+    print 'square_diff_sum_h is:'
+    print square_diff_sum_h
+    print '\n\n\n\n\n\n\n'
+    
+#     # sum up the square differences and m across all z_i for this lag (h) (@delayed)
+#     square_diff_sum_h_total = delayed(sum)(square_diff_sum_h)
+#     m_h_total = delayed(sum)(m_h)
 
+    # sum up the square differences and m across all z_i for this lag (h) (@delayed)
+    square_diff_sum_h_total = sum(square_diff_sum_h)
+    m_h_total = sum(m_h)
+
+    print ''
+    print 'past z_idx, z_i in np.ndenumerate(data) loop'
       
     # finish the semivariance calculation (semivariance = effectivly half of the average square_diff)  
     semivariance_h = calc_semivariance_h(square_diff_sum_h_total, m_h_total)
 
     #lags[h] = paired_dist_diff / m[h] # /m mean distance within the lag
-    m_h_total # final sample size at each lag
+    #m_h_total # final sample size at each lag
     
     return semivariance_h, m_h_total
 
@@ -272,22 +307,31 @@ if __name__ == '__main__':
     # ------------------
     
     # which modelled data to read in
-    model_type = '55m' # 'UKV'
+    # model_type = '55m' # 'UKV'
+    model_type = 'LM'
     res = FOcon.model_resolution[model_type]
     
     # directories
     maindir = os.environ.get('HOME') + '/Documents/AerosolBackMod/scripts/improveNetworks/'
-    datadir = os.environ.get('DATADIR') + '/suite_forecasts/'
+    
     ceilDatadir = os.environ.get('DATADIR') + '/MLH/'
     ceilmetadatadir = os.environ.get('DATADIR') + '/metadata/'
     variogramsavedir = maindir + 'figures/variograms/'+model_type+'/'
     twodrangedir = maindir + 'figures/2D_range/'+model_type+'/'
     npy_savedir = os.environ.get('DATADIR') + '/npy/'
+    daskmapsavedir = os.environ.get('DATADIR') + '/dask_maps/'
+    
+    if model_type == '55m':
+        datadir = os.environ.get('DATADIR') + '/suite_forecasts/'
+    elif model_type == 'LM': 
+        datadir = os.environ.get('SCRATCH') + '/' + model_type + '/full_forecast/'
     
     # intial test case
-    daystr = ['20160913'] # 55 m case
-    # daystr = ['20180903'] # low wind speed day (2.62 m/s)
-    # current set (missing 20180215 and 20181101) # 08-03
+    # daystr = ['20160913'] # 55 m case
+    # daystr = ['20180903'] # low UKV wind speed day (2.62 m/s)
+    daystr = ['20180418'] # first of the LM cases
+    
+    # current set (missing 20180215 and 20181101 for UKV) # 08-03
     days_iterate = eu.dateList_to_datetime(daystr)
     
     # import all site names and heights
@@ -299,7 +343,11 @@ if __name__ == '__main__':
     
     if model_type == '55m':
         max_height_num = 76
+        Z = '03'
         # max_hour_num = 10
+    elif model_type == 'LM':
+        max_height_num = 30
+        Z = '21'
     
     # passed in from bash script
     hr_str = sys.argv[1]
@@ -370,7 +418,7 @@ if __name__ == '__main__':
         # use hour given in bash script
         hr = dt.datetime(day.year, day.month, day.day, hr_int, 0, 0)
         
-        mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, res, 905, Z='03', allvars=False, hr=hr, height_extract_idx=height_idx)
+        mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, res, 905, Z=Z, allvars=False, hr=hr, height_extract_idx=height_idx)
         
         # store which height is being processed for .npy save later
         heights_processed[height_idx] = mod_data['level_height'][0]
@@ -490,11 +538,11 @@ if __name__ == '__main__':
         lags = np.zeros(nlags) # average actual distance between points within each lag bin (e.g could be 1.31 km for bin range 1 - 2 km)
         
         # set up semivariance array ready
-        semivariance = np.zeros(nlags) # semivariance within each lag bin
-        semivariance[:] = np.nan
+        #semivariance = np.zeros(nlags) # semivariance within each lag bin
+        #semivariance[:] = np.nan
         
         # sample size for each lag. Start at 0 and add them up as more idx pairs are found
-        m = np.zeros(nlags)
+        #m = np.zeros(nlags)
         
         # maximum idx position for each dimension
         idx_max = [j - 1 for j in data.shape]
@@ -503,20 +551,79 @@ if __name__ == '__main__':
         # only creates distances for one quadrant (top right) effectively
         distance = np.sqrt((unrotLat2d**2) + (unrotLon2d**2))
         
-        # find idx linked to this h
-        for h, bin_start in enumerate(bins[:-1]):
-        
-            compute_map = calc_semivariance(data, distance, idx_max, h, bin_start)
-        
-            semivariance[h], m[h] = compute_map.compute()
-        
-        
-        # where to put compute?
-              
-        # return semivariance, lags, m
-        # 
-        # semivariance, lags, m = calc_semivariance(data, bins, nlags)
+#         # find idx linked to this h
+#         for h, bin_start in enumerate(bins[:-1]):
+#         
+#             compute_map = calc_semivariance(data, distance, idx_max, h, bin_start)
+#         
+#             # semivariance[h], m[h] = compute_map.compute()
+#             b = compute_map.compute()
+#             semivariance.append(b[0])
+#             m.append(b[1])
 
+        # find idx linked to this h
+        #@delayed
+        def all_semivariance(bins, data, distance, idx_max):
+        
+            semivariance = []
+            m = []
+        
+            for h, bin_start in enumerate(bins[:-1]):
+            
+                b = calc_semivariance(data, distance, idx_max, h, bin_start)
+            
+                semivariance.append(b[0])
+                m.append(b[1])
+                
+            return semivariance, m
+
+#         d = all_semivariance(bins, data, distance, idx_max)
+#         semivariance_full = d[0]
+#         m_full = d[1]
+        
+        semivariance_full, m_full = all_semivariance(bins, data, distance, idx_max)
+        
+        print 'semivariance_full'
+        print semivariance_full
+        print 'm_full'
+        print m_full
+        
+        #fig = d.visualise()
+        #plt.savefig(daskmapsavedir + 'debugging_map.png')
+        #a = d.compute()
+        
+        print'\n\n\n\n\n'
+        #print 'a'
+        #print a
+        
+        semivariance = semivariance_full
+        m = m_full
+#         semivariance_full_2 = dask.compute(*semivariance_full)
+#         m_full_2 = dask.compute(*m_full)
+        
+#         print 'semivariance_full_2'
+#         print semivariance_full_2
+#         print 'm_full_"'
+#         print m_full_2
+        
+#         compute_map = all_semivariance(bins, data, distance, idx_max)
+#         d = compute_map.compute()
+#         semivariance_full = d[0]
+#         m_full = d[1]
+#         
+#         print 'semivariance_full'
+#         print semivariance_full
+#         print 'm_full'
+#         print m_full
+#         
+#         print'\n\n\n\n\n'
+#         semivariance_full_2 = dask.compute(*semivariance_full)
+#         m_full_2 = dask.compute(*m_full)
+#         
+#         print 'semivariance_full_2'
+#         print semivariance_full_2
+#         print 'm_full_"'
+#         print m_full_2
         
         # choose variogram model based on cross validation test reslts
         variogram_model = 'spherical'
