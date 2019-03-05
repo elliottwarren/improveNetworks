@@ -419,6 +419,7 @@ if __name__ == '__main__':
         hr = dt.datetime(day.year, day.month, day.day, hr_int, 0, 0)
         
         mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, res, 905, Z=Z, allvars=False, hr=hr, height_extract_idx=height_idx)
+#         mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, res, 905, Z=Z, allvars=False, hr=hr, height_extract_idx=height_idx)
         
         # store which height is being processed for .npy save later
         heights_processed[height_idx] = mod_data['level_height'][0]
