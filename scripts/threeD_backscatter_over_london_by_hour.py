@@ -162,7 +162,7 @@ def twoD_range_one_day(day_time, day_height, day_range, mlh_obs, data_var, U_str
 
     return fig, ax
 
-# @delayed
+@delayed
 def square_differences_sum(z_idx, z_i, data, idx_origin_ring, idx_max, distance):
 
     """
@@ -240,15 +240,16 @@ def calc_semivariance(data, distance, idx_max, h, bins, bin_start):
     # reorganise the origin pairs from a list with 2, 1D arrays, into nx2 list of paired row and column index positions
     idx_origin_ring = [[i,j] for (i,j) in zip(idx_origin_ring[0], idx_origin_ring[1])]
     
-    # array ready to be filled with the sum of square differences (and number of pairs) for every z_i in data, for this lag (h)
-    # 0 be deault = no effect on end summation
-    square_diff_sum_h = np.zeros((data.shape))
-    m_h = np.zeros((data.shape))
-    distance_sum_h = np.zeros((data.shape))
+#     # array ready to be filled with the sum of square differences (and number of pairs) for every z_i in data, for this lag (h)
+#     # 0 be deault = no effect on end summation
+#     square_diff_sum_h = np.zeros((data.shape))
+#     m_h = np.zeros((data.shape))
+#     distance_sum_h = np.zeros((data.shape))
     
-#     square_diff_sum_h = []
-#     m_h = []
-#     results = []
+    square_diff_sum_h = []
+    m_h = []
+    distance_sum_h = []
+    result = []
     
     # z_i = data[100,100]; z_idx = (100,100)
     for z_idx, z_i in np.ndenumerate(data):
@@ -265,14 +266,17 @@ def calc_semivariance(data, distance, idx_max, h, bins, bin_start):
 #         print a[0]
 #         square_diff_sum_h[z_idx[0], z_idx[1]] = a[0]
 #         m_h[z_idx[0], z_idx[1]] = a[1]
+
+          # not parallised
+#         square_diff_sum_h[z_idx[0], z_idx[1]], m_h[z_idx[0], z_idx[1]], distance_sum_h[z_idx[0], z_idx[1]] = \
+#         square_differences_sum(z_idx, z_i, data, idx_origin_ring, idx_max, distance)
+
+        a = square_differences_sum(z_idx, z_i, data, idx_origin_ring, idx_max, distance)
+        result.append(a)
     
-        square_diff_sum_h[z_idx[0], z_idx[1]], m_h[z_idx[0], z_idx[1]], distance_sum_h[z_idx[0], z_idx[1]] = \
-        square_differences_sum(z_idx, z_i, data, idx_origin_ring, idx_max, distance)
-    
-#         square_diff_sum_h.append(a[0])
-#         m_h.append(a[1])
-        #square_diff_sum_h.append(c[0])
-        #m_h.append(c[1])
+        #square_diff_sum_h.append(result[0])
+        #m_h.append(result[1])
+        #distance_sum_h.append(result[0])
         #print z_idx
     
 #     results = dask.compute(*results)
@@ -283,14 +287,30 @@ def calc_semivariance(data, distance, idx_max, h, bins, bin_start):
 #     print square_diff_sum_h
 #     print '\n\n\n\n\n\n\n'
     
-#     # sum up the square differences and m across all z_i for this lag (h) (@delayed)
-#     square_diff_sum_h_total = delayed(sum)(square_diff_sum_h)
-#     m_h_total = delayed(sum)(m_h)
-
+    resultsDask = compute(*result, get=dask.multiprocessing.get)
+    if h == 1:
+        print 'resultsDask:'
+        print 'lag='+str(h)
+        print resultsDask
+    
     # sum up the square differences and m across all z_i for this lag (h) (@delayed)
-    square_diff_sum_h_total = np.sum(square_diff_sum_h)
-    m_h_total = np.sum(m_h)
-    distance_avg_h = np.sum(distance_sum_h) / m_h_total
+    #thing = delayed(np.sum)(square_diff_sum_h)
+    square_diff_sum_h_total = np.array([i[0] for i in resultsDask])
+    m_h_total = np.array([i[1] for i in resultsDask])
+    distance_avg_h = np.array([i[2] for i in resultsDask])
+    #m_h_total = delayed(np.sum)(m_h).compute()
+    #distance_avg_h = delayed(np.sum)(distance_sum_h / m_h_total).compute()
+    
+#     # sum up the square differences and m across all z_i for this lag (h) (@delayed)
+#     #thing = delayed(np.sum)(square_diff_sum_h)
+#     square_diff_sum_h_total = delayed(np.sum)(square_diff_sum_h).compute()
+#     m_h_total = delayed(np.sum)(m_h).compute()
+#     distance_avg_h = delayed(np.sum)(distance_sum_h / m_h_total).compute()
+
+#     # sum up the square differences and m across all z_i for this lag (h) (@delayed)
+#     square_diff_sum_h_total = np.sum(square_diff_sum_h)
+#     m_h_total = np.sum(m_h)
+#     distance_avg_h = np.sum(distance_sum_h) / m_h_total
 
     #print ''
     #print 'past z_idx, z_i in np.ndenumerate(data) loop'
