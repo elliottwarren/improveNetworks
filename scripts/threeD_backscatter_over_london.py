@@ -134,7 +134,7 @@ def rotate_lon_lat_2D(longitude, latitude, model_type, corner_locs=False):
     rotlat2D = np.transpose(np.array([latitude] * longitude.shape[0]))
 
     # Get model transformation object (ll) to unrotate the model data later
-    if model_type == 'UKV':
+    if (model_type == 'UKV') | (model_type == '55m'):
         rotpole = (iris.coord_systems.RotatedGeogCS(37.5, 177.5, ellipsoid=iris.coord_systems.GeogCS(
             6371229.0))).as_cartopy_crs()  # rot grid
         rotpole2 = ccrs.RotatedPole(pole_longitude=177.5, pole_latitude=37.5)

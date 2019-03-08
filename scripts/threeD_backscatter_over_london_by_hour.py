@@ -39,9 +39,9 @@ import FOconstants as FOcon
 
 os.system('echo '+sys.platform)
 
-from pykrige.ok import OrdinaryKriging
-from pykrige.core import _calculate_variogram_model
-from pykrige import variogram_models
+#from pykrige.ok import OrdinaryKriging
+#from pykrige.core import _calculate_variogram_model
+#from pykrige import variogram_models
 # from pykrige.uk import UniversalKriging
 # from pykrige.ok3d import OrdinaryKriging3D
 # from pykrige.rk import Krige
@@ -163,7 +163,7 @@ def twoD_range_one_day(day_time, day_height, day_range, mlh_obs, data_var, U_str
     return fig, ax
 
 @delayed
-def square_differences_sum(z_idx, z_i, data, idx_origin, idx_max):
+def square_differences_sum(z_idx, z_i, data, idx_origin_ring, idx_max, distance):
 
     """
     Compute the square differences between z_i and all pairs at this lag, where idx_origin(lag)
@@ -177,38 +177,41 @@ def square_differences_sum(z_idx, z_i, data, idx_origin, idx_max):
     #def sum_list(args):
     #    return sum(args)
 
-    # adjust idx origin for this z_idx
-    idx_from_z_idx = [z_idx[0] + idx_origin[0], z_idx[1] + idx_origin[1]]                          
+    # adjust idx origin for this z_idx (ring around z_idx now)           
+    z_idx_ring = [[idx_origin_i[0] + z_idx[0], idx_origin_i[1] + z_idx[1]] for idx_origin_i in idx_origin_ring]
 
     # remove idx positions past the edges of the domain (below 0 or above the last idx for the data array)
     # split if statements up to reduce computational expense
-    # super inefficient... 
-    idx_pairs_keep = []
-    for idx_i in idx_from_z_idx:
-        if idx_i[0] >= 0:
-            if idx_i[0] <= idx_max[0]:
-                if idx_i[1] >= 0:
-                    if idx_i[1] <= idx_max[1]:
-                        idx_pairs_keep.append(idx_i)
+    # retain a partial ring around z_idx that does not go over the domain edges
+    z_idx_ring_keep = []
+    for z_idx_ring_i in z_idx_ring:
+        if z_idx_ring_i[0] >= 0:
+            if z_idx_ring_i[0] <= idx_max[0]:
+                if z_idx_ring_i[1] >= 0:
+                    if z_idx_ring_i[1] <= idx_max[1]:
+                        z_idx_ring_keep.append(z_idx_ring_i)
+        
             
     # add on the number of pairs for z_i to the total in this lag
-    m_i = len(idx_pairs_keep)
+    m_i = len(z_idx_ring_keep)
     
     # calculate square difference between z_i and paired values. Add to the square_diff list to be summed after
     # iterating through all z_i
 #     square_diff = np.sum([(z_i-data[idx_i[0], idx_i[1]])**2 for idx_i in idx_pairs_keep])
-    square_diff_sum_i = sum([square_diff_i(z_i, data[idx_i[0], idx_i[1]]) for idx_i in idx_pairs_keep])
+    square_diff_sum_i = sum([square_diff_i(z_i, data[idx_i[0], idx_i[1]]) for idx_i in z_idx_ring_keep])
     
-    # find paired distances between all points
-    #lat_diffs = [unrotLat2d[z_idx[0], z_idx[1]] - unrotLat2d[idx_i[0], idx_i[1]] for idx_i in idx_pairs_keep]
-    #lon_diffs = [unrotLon2d[z_idx[0], z_idx[1]] - unrotLon2d[idx_i[0], idx_i[1]] for idx_i in idx_pairs_keep]
-    #paired_dist_diff += np.sum([np.sqrt((lat_diff_i**2) + (lon_diff_i**2)) for (lat_diff_i, lon_diff_i) in zip(lat_diffs, lon_diffs)])
-
-    return square_diff_sum_i, m_i
+    # sum distances to work out the distance for this lag
+    # use absolute values of idx to acess the top right quadrant.
+    # idx_keep from origin (help calculate distance for this lag)        
+    # adjust back to origin (partial ring around the origin)
+    # will still have negative idx values in it, therefore make it abs() version in distance calc.
+    idx_origin_ring_keep = [[idx_i[0] - z_idx[0], idx_i[1] - z_idx[1]] for idx_i in z_idx_ring_keep]
+    distance_sum_i = np.sum([distance[abs(idx_i[0]), abs(idx_i[1])] for idx_i in idx_origin_ring_keep])
+    
+    return square_diff_sum_i, m_i, distance_sum_i
 
 #@delayed
-
-def calc_semivariance(data, distance, idx_max, h, bin_start):
+def calc_semivariance(data, distance, idx_max, h, bins, bin_start):
 
     """
     Calculate the semivariance for this lag (h)
@@ -218,33 +221,44 @@ def calc_semivariance(data, distance, idx_max, h, bin_start):
     def calc_semivariance_h(square_diff_sum_h_total, m_h_total):
         return 0.5 * square_diff_sum_h_total / m_h_total
 
-    print ' h = '+str(h)
+    #print ' h = '+str(h)
     
     bin_end = bins[h+1]
     
     # idx relative to the current position [0,0] (just top right quadrant idx of the circle)
     idx = list(np.where((distance >= bin_start) & (distance < bin_end)))
-
-    # combine 4 versions of idx that would represent all 4 quadrants and not just top right from the origin
-    # plt.scatter(idx_origin[0], idx_origin[1]) to see that it centres over 0,0
-    idx_origin = [np.hstack([idx[0], -idx[0], idx[0], -idx[0]]), np.hstack([idx[1], -idx[1], -idx[1], idx[1]])]
     
-    # array ready to be filled with the sum of square differences (and number of pairs) for every z_i in data, for this lag (h)
-    # 0 be deault = no effect on end summation
-    #square_diff_sum_h = da.zeros((data.shape), chunks=1)
-    #m_h = da.zeros((data.shape), chunks=1)
+    
+    # combine 4 versions of idx that would represent all 4 quadrants and not just top right from the origin
+    # top right (+idx, +idx) and bot left (-idx, -idx) are unchanged, other two quadrants have edge idx positions removed to avoid duplication, 
+    # find where idx = 0 in row or column, so when the 4 quadrants are merged, these can be left out of the bot right and top left quadrants
+    # plt.scatter(idx_origin[0], idx_origin[1]) to see that it centres over 0,0
+    keep = (idx[0] != 0) & (idx[1] != 0)
+    idx_origin_ring = [np.hstack([idx[0], -idx[0], idx[0][keep], -idx[0][keep]]), np.hstack([idx[1], -idx[1], -idx[1][keep], idx[1][keep]])]
+    
+    
+    # reorganise the origin pairs from a list with 2, 1D arrays, into nx2 list of paired row and column index positions
+    idx_origin_ring = [[i,j] for (i,j) in zip(idx_origin_ring[0], idx_origin_ring[1])]
+    
+#     # array ready to be filled with the sum of square differences (and number of pairs) for every z_i in data, for this lag (h)
+#     # 0 be deault = no effect on end summation
+#     square_diff_sum_h = np.zeros((data.shape))
+#     m_h = np.zeros((data.shape))
+#     distance_sum_h = np.zeros((data.shape))
     
     square_diff_sum_h = []
     m_h = []
-    results = []
+    distance_sum_h = []
+    result = []
     
+    # z_i = data[100,100]; z_idx = (100,100)
     for z_idx, z_i in np.ndenumerate(data):
         
-        # calculate the sum of square differences and the total of pairs for z_i (@delayed)
-#         square_diff_sum_h[z_idx], m_h[z_idx] = square_differences_sum(z_idx, z_i, data, idx_origin, idx_max)
-        c = square_differences_sum(z_idx, z_i, data, idx_origin, idx_max)
-        
-        results.append(c)
+#         # calculate the sum of square differences and the total of pairs for z_i (@delayed)
+# #         square_diff_sum_h[z_idx], m_h[z_idx] = square_differences_sum(z_idx, z_i, data, idx_origin, idx_max)
+#         c = square_differences_sum(z_idx, z_i, data, idx_origin, idx_max)
+#         
+#         results.append(c)
         #a = computation_map.compute()
 #         print type(a)
 #         print len(a)
@@ -252,39 +266,79 @@ def calc_semivariance(data, distance, idx_max, h, bin_start):
 #         print a[0]
 #         square_diff_sum_h[z_idx[0], z_idx[1]] = a[0]
 #         m_h[z_idx[0], z_idx[1]] = a[1]
+
+          # not parallised
+#         square_diff_sum_h[z_idx[0], z_idx[1]], m_h[z_idx[0], z_idx[1]], distance_sum_h[z_idx[0], z_idx[1]] = \
+#         square_differences_sum(z_idx, z_i, data, idx_origin_ring, idx_max, distance)
+
+        a = square_differences_sum(z_idx, z_i, data, idx_origin_ring, idx_max, distance)
+        result.append(a)
     
-#         square_diff_sum_h.append(a[0])
-#         m_h.append(a[1])
-        #square_diff_sum_h.append(c[0])
-        #m_h.append(c[1])
+        #square_diff_sum_h.append(result[0])
+        #m_h.append(result[1])
+        #distance_sum_h.append(result[0])
         #print z_idx
     
-    results = dask.compute(*results)
-    square_diff_sum_h = results[0]
-    m_h = results[1] 
+#     results = dask.compute(*results)
+#     square_diff_sum_h = results[0]
+#     m_h = results[1] 
+#     
+#     print 'square_diff_sum_h is:'
+#     print square_diff_sum_h
+#     print '\n\n\n\n\n\n\n'
     
-    print 'square_diff_sum_h is:'
-    print square_diff_sum_h
-    print '\n\n\n\n\n\n\n'
+    resultsDask = compute(*result, get=dask.multiprocessing.get)
+    if h == 1:
+        print 'resultsDask:'
+        print 'lag='+str(h)
+        print resultsDask
+    
+    # sum up the square differences and m across all z_i for this lag (h) (@delayed)
+    #thing = delayed(np.sum)(square_diff_sum_h)
+    square_diff_sum_h_total = np.array([i[0] for i in resultsDask])
+    m_h_total = np.array([i[1] for i in resultsDask])
+    distance_avg_h = np.array([i[2] for i in resultsDask])
+    #m_h_total = delayed(np.sum)(m_h).compute()
+    #distance_avg_h = delayed(np.sum)(distance_sum_h / m_h_total).compute()
     
 #     # sum up the square differences and m across all z_i for this lag (h) (@delayed)
-#     square_diff_sum_h_total = delayed(sum)(square_diff_sum_h)
-#     m_h_total = delayed(sum)(m_h)
+#     #thing = delayed(np.sum)(square_diff_sum_h)
+#     square_diff_sum_h_total = delayed(np.sum)(square_diff_sum_h).compute()
+#     m_h_total = delayed(np.sum)(m_h).compute()
+#     distance_avg_h = delayed(np.sum)(distance_sum_h / m_h_total).compute()
 
-    # sum up the square differences and m across all z_i for this lag (h) (@delayed)
-    square_diff_sum_h_total = sum(square_diff_sum_h)
-    m_h_total = sum(m_h)
+#     # sum up the square differences and m across all z_i for this lag (h) (@delayed)
+#     square_diff_sum_h_total = np.sum(square_diff_sum_h)
+#     m_h_total = np.sum(m_h)
+#     distance_avg_h = np.sum(distance_sum_h) / m_h_total
 
-    print ''
-    print 'past z_idx, z_i in np.ndenumerate(data) loop'
-      
+    #print ''
+    #print 'past z_idx, z_i in np.ndenumerate(data) loop'
+
     # finish the semivariance calculation (semivariance = effectivly half of the average square_diff)  
     semivariance_h = calc_semivariance_h(square_diff_sum_h_total, m_h_total)
 
     #lags[h] = paired_dist_diff / m[h] # /m mean distance within the lag
     #m_h_total # final sample size at each lag
     
-    return semivariance_h, m_h_total
+    return semivariance_h, m_h_total, distance_avg_h
+
+#@delayed
+def all_semivariance(bins, data, distance, idx_max):
+    
+    semivariance = []
+    m = []
+    lags = []
+
+    # h = 0; bin_start = bins[0]
+    for h, bin_start in enumerate(bins[:-1]):
+    
+        b = calc_semivariance(data, distance, idx_max, h, bins, bin_start)
+        semivariance.append(b[0])
+        m.append(b[1])
+        lags.append(b[2])
+        
+    return semivariance, m, lags
 
 if __name__ == '__main__':
 
@@ -364,32 +418,36 @@ if __name__ == '__main__':
     ceilsitefile = 'improveNetworksCeils.csv'
     ceil_metadata = ceil.read_ceil_metadata(ceilmetadatadir, ceilsitefile)
     
-    # empty arrays to fill  (day, hour, height)
-    v_range = np.empty((max_height_num))
-    v_range[:] = np.nan
+    for d, day in enumerate(days_iterate):
+        
+        os.system('echo day = ' + day.strftime('%Y-%m-%d'))
     
-    # empty arrays to fill  (day, hour, height)
-    sill = np.empty((max_height_num))
-    sill[:] = np.nan
-    
-    # empty arrays to fill  (day, hour, height)
-    nugget = np.empty((max_height_num))
-    nugget[:] = np.nan
-    
-    heights_processed = np.empty((max_height_num))
-    heights_processed[:] = np.nan
-    
-    #     U_mean = np.empty((len(days_iterate)))
-    #     U_mean[:] = np.nan
-    #     
-    #     aer_mean = np.empty((len(days_iterate)))
-    #     aer_mean[:] = np.nan
-    
-    day = days_iterate[0]
+        # empty arrays to fill  (day, hour, height)
+        v_range = np.empty((24, max_height_num))
+        v_range[:] = np.nan
+        
+        # empty arrays to fill  (day, hour, height)
+        sill = np.empty((24, max_height_num))
+        sill[:] = np.nan
+        
+        # empty arrays to fill  (day, hour, height)
+        nugget = np.empty((24, max_height_num))
+        nugget[:] = np.nan
+        
+        heights_processed = np.empty((24, max_height_num))
+        heights_processed[:] = np.nan
+        
+        U_mean = np.empty((24))
+        U_mean[:] = np.nan
+         
+        aer_mean = np.empty((24))
+        aer_mean[:] = np.nan
+        
+        #day = days_iterate[0]
+        #print 'day = ' + day.strftime('%Y-%m-%d')
 
-    print 'day = ' + day.strftime('%Y-%m-%d')
-
-    for height_idx in np.arange(max_height_num):
+        #     for height_idx in np.arange(max_height_num):
+        # indent from savesubdir down to mlh_obs
 
         # date directory save for variogram
         savesubdir = variogramsavedir + day.strftime('%Y%m%d')
@@ -418,8 +476,8 @@ if __name__ == '__main__':
         # use hour given in bash script
         hr = dt.datetime(day.year, day.month, day.day, hr_int, 0, 0)
         
-        mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, res, 905, Z=Z, allvars=False, hr=hr, height_extract_idx=height_idx)
-#         mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, res, 905, Z=Z, allvars=False, hr=hr, height_extract_idx=height_idx)
+        mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, 905, Z=Z, allvars=True)
+#         mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, 905, Z=Z, allvars=False, hr=hr, height_extract_idx=height_idx)
         
         # store which height is being processed for .npy save later
         heights_processed[height_idx] = mod_data['level_height'][0]
@@ -470,222 +528,170 @@ if __name__ == '__main__':
         # ==============================================================================
         # .shape(time, height, lat, lon) # definately lat then lon ...
 
-        # for hr_idx, hr in enumerate(mod_data['time'][:-1]): # ignore midnight next day
-
-        # read in mod_data for this hour
-        
-        # any prep....
-
-        # height_idx = 0; height_i = mod_data['level_height'][0]
-
-
-        # extract 2D cross section for this time
-        # just London area
-        if data_var == 'backscatter':
-            data = np.log10(mod_data[data_var][0, 0, :, :])
-        else:
-            data = mod_data[data_var][0, 0, :, :]
-                
-
-        #ToDo Find best model to fit on the variogram, then pass best model into the main OrdinaryKriging() function
-        # use the kriging guide to help with this
-        #ToDo Use OK.update_variogram_model to save computational resources
-
-        # # test which model type to fit to the data using cross validation
-        # # PyKrige documentation 4.1: Krige CV
-        # param_dict = {"method": ["ordinary"],
-        #               "variogram_model": ["linear", "power", "spherical"],
-        #               "nlags": [20],
-        #               # "weight": [True, False]
-        #               }
-        #
-        # estimator = GridSearchCV(Krige(), param_dict, verbose=True)
-
-        # # data - needs to be X : array-like, shape = [n_samples, n_features]
-        # # Training vector, where n_samples is the number of samples and n_features is the number of features.
-        # # location [lat, lon]
-        # #! Note: import to make sure reshaped axis keep the data in the correct order so X_i(lon_i, lat_i) and not
-        # #   some random lon or lat point. Be careful when stacking and rotating - always do checks against the
-        # #   original, input variable! e.g. check with y[30] = [lon[30,0], lat[30,0]]
-        # y = data.flatten()
-        # # data = [col0=lon, col1=lat]
-        # X = np.stack((unrotLon2d.flatten(), unrotLat2d.flatten()), axis=1)
-        #
-        # estimator.fit(X=X, y=y)
-
-        # # print results
-        # if hasattr(estimator, 'best_score_'):
-        #     print('best_score R2 = {:.3f}'.format(estimator.best_score_))
-        #     print('best_params = ', estimator.best_params_)
-        #     print('\nCV results::')
-        # if hasattr(estimator, 'cv_results_'):
-        #     for key in ['mean_test_score', 'mean_train_score',
-        #                 'param_method', 'param_variogram_model']:
-        #         print(' - {} : {}'.format(key, estimator.cv_results_[key]))
-
-
-        # Create the semivariance and lags
-        # appending dmax += 0.001 ensure maximum bin is included
-        nlags = np.max(list(data.shape))
-        dmin = unrotLat2d[1,0] # equidistant grid, therefore the first box across ([1,0]) will have the minimum distance 
-        dmax = np.sqrt((np.amax(unrotLat2d)**2) + (np.amax(unrotLon2d)**2)) # [km] - diag distance to opposite corner of domain
-        
-        dd = (dmax - dmin) / nlags # average nlag spacing
-        bins = [dmin + n * dd for n in range(nlags)]
-        dmax += 0.001 
-        bins.append(dmax)
-        
-        # setup arrays to be filled
-        lags = np.zeros(nlags) # average actual distance between points within each lag bin (e.g could be 1.31 km for bin range 1 - 2 km)
-        
-        # set up semivariance array ready
-        #semivariance = np.zeros(nlags) # semivariance within each lag bin
-        #semivariance[:] = np.nan
-        
-        # sample size for each lag. Start at 0 and add them up as more idx pairs are found
-        #m = np.zeros(nlags)
-        
-        # maximum idx position for each dimension
-        idx_max = [j - 1 for j in data.shape]
-        
-        # create euclidean distance matrix (from point [0,0])
-        # only creates distances for one quadrant (top right) effectively
-        distance = np.sqrt((unrotLat2d**2) + (unrotLon2d**2))
-        
-#         # find idx linked to this h
-#         for h, bin_start in enumerate(bins[:-1]):
-#         
-#             compute_map = calc_semivariance(data, distance, idx_max, h, bin_start)
-#         
-#             # semivariance[h], m[h] = compute_map.compute()
-#             b = compute_map.compute()
-#             semivariance.append(b[0])
-#             m.append(b[1])
-
-        # find idx linked to this h
-        #@delayed
-        def all_semivariance(bins, data, distance, idx_max):
-        
-            semivariance = []
-            m = []
-        
-            for h, bin_start in enumerate(bins[:-1]):
+        #height_idx = 0; height_i = 5.0
+        for height_idx, height_i in enumerate(mod_data['level_height'][height_range]): # [:20]
+            #print 'h = ' + str(height_i)
             
-                b = calc_semivariance(data, distance, idx_max, h, bin_start)
-            
-                semivariance.append(b[0])
-                m.append(b[1])
+            os.system('echo h = ' + str(height_i))
+            # hr_idx = 0; hr = mod_data['time'][0]
+            for hr_idx, hr in enumerate(mod_data['time'][:-1]): # ignore midnight next day
+                os.system('echo hr = ' + str(hr))
+
+                # read in mod_data for this hour
                 
-            return semivariance, m
-
-#         d = all_semivariance(bins, data, distance, idx_max)
-#         semivariance_full = d[0]
-#         m_full = d[1]
+                # any prep....
         
-        semivariance_full, m_full = all_semivariance(bins, data, distance, idx_max)
+                # height_idx = 0; height_i = mod_data['level_height'][0]
         
-        print 'semivariance_full'
-        print semivariance_full
-        print 'm_full'
-        print m_full
         
-        #fig = d.visualise()
-        #plt.savefig(daskmapsavedir + 'debugging_map.png')
-        #a = d.compute()
+#                 # extract 2D cross section for this time
+#                 # just London area
+#                 if data_var == 'backscatter':
+#                     data = np.log10(mod_data[data_var][0, 0, :, :])
+#                 else:
+#                     data = mod_data[data_var][0, 0, :, :]
+
+                # extract 2D cross section for this time
+                # just London area
+                if data_var == 'backscatter':
+                    data = np.log10(mod_data[data_var][hr_idx, height_idx, :, :])
+                else:
+                    data = mod_data[data_var][hr_idx, height_idx, :, :]
+                        
         
-        print'\n\n\n\n\n'
-        #print 'a'
-        #print a
+                #ToDo Find best model to fit on the variogram, then pass best model into the main OrdinaryKriging() function
+                # use the kriging guide to help with this
+                #ToDo Use OK.update_variogram_model to save computational resources
         
-        semivariance = semivariance_full
-        m = m_full
-#         semivariance_full_2 = dask.compute(*semivariance_full)
-#         m_full_2 = dask.compute(*m_full)
+                # # test which model type to fit to the data using cross validation
+                # # PyKrige documentation 4.1: Krige CV
+                # param_dict = {"method": ["ordinary"],
+                #               "variogram_model": ["linear", "power", "spherical"],
+                #               "nlags": [20],
+                #               # "weight": [True, False]
+                #               }
+                #
+                # estimator = GridSearchCV(Krige(), param_dict, verbose=True)
         
-#         print 'semivariance_full_2'
-#         print semivariance_full_2
-#         print 'm_full_"'
-#         print m_full_2
+                # # data - needs to be X : array-like, shape = [n_samples, n_features]
+                # # Training vector, where n_samples is the number of samples and n_features is the number of features.
+                # # location [lat, lon]
+                # #! Note: import to make sure reshaped axis keep the data in the correct order so X_i(lon_i, lat_i) and not
+                # #   some random lon or lat point. Be careful when stacking and rotating - always do checks against the
+                # #   original, input variable! e.g. check with y[30] = [lon[30,0], lat[30,0]]
+                # y = data.flatten()
+                # # data = [col0=lon, col1=lat]
+                # X = np.stack((unrotLon2d.flatten(), unrotLat2d.flatten()), axis=1)
+                #
+                # estimator.fit(X=X, y=y)
         
-#         compute_map = all_semivariance(bins, data, distance, idx_max)
-#         d = compute_map.compute()
-#         semivariance_full = d[0]
-#         m_full = d[1]
-#         
-#         print 'semivariance_full'
-#         print semivariance_full
-#         print 'm_full'
-#         print m_full
-#         
-#         print'\n\n\n\n\n'
-#         semivariance_full_2 = dask.compute(*semivariance_full)
-#         m_full_2 = dask.compute(*m_full)
-#         
-#         print 'semivariance_full_2'
-#         print semivariance_full_2
-#         print 'm_full_"'
-#         print m_full_2
+                # # print results
+                # if hasattr(estimator, 'best_score_'):
+                #     print('best_score R2 = {:.3f}'.format(estimator.best_score_))
+                #     print('best_params = ', estimator.best_params_)
+                #     print('\nCV results::')
+                # if hasattr(estimator, 'cv_results_'):
+                #     for key in ['mean_test_score', 'mean_train_score',
+                #                 'param_method', 'param_variogram_model']:
+                #         print(' - {} : {}'.format(key, estimator.cv_results_[key]))
         
-        # choose variogram model based on cross validation test reslts
-        variogram_model = 'spherical'
-        variogram_function = variogram_models.spherical_variogram_model
-        weight = True
-
-        # with the bins and semivariance, do the fitting
-        variogram_model_parameters = \
-                _calculate_variogram_model(lags, semivariance, variogram_model,
-                                           variogram_function, weight)
-
-        # plot variogram
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        ax.plot(lags, semivariance, 'r*')
-        ax.plot(lags,
-                variogram_function(variogram_model_parameters,
-                                        lags), 'k-')
-
-        ax = plt.gca()
-        plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height=' + str(mod_data['level_height'][0]) + 'm')
-        ax.set_xlabel('Distance [km]')
-        ax.set_ylabel('Semi-variance')
-        savesubdir = variogramsavedir + hr.strftime('%Y-%m-%d') + '/'
-        savename = hr.strftime('%Y-%m-%d_%H') +  '_{:05.0f}'.format(mod_data['level_height'][0]) + 'm_variogram'
         
-        if os.path.exists(savesubdir) == False:
-            os.mkdir(savesubdir)
-        plt.savefig(savesubdir + savename)
-        plt.close()
-
-#         # Ordinary Kriging: 3.1.1 in pykrige documentation
-#         # Function fails when given 2D arrays so pass in flattened 1D arrays of the 2D data.
-#         OK = OrdinaryKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(),
-#                              variogram_model=variogram_model, nlags=1440, weight=True, enable_plotting=True) # verbose=True,enable_plotting=True,
-
-
-        ax = plt.gca()
-        plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height=' + str(mod_data['level_height'][0]) + 'm')
-        ax.set_xlabel('Distance [km]')
-        ax.set_ylabel('Semi-variance')
-        savesubdir = variogramsavedir + hr.strftime('%Y-%m-%d') + '/'
-        savename = hr.strftime('%Y-%m-%d_%H') +  '_{:05.0f}'.format(mod_data['level_height'][0]) + 'm_variogram'
+                # Create the semivariance and lags
+                # appending dmax += 0.001 ensure maximum bin is included
+                nlags = np.max(list(data.shape))
+                dmin = unrotLat2d[1,0] # equidistant grid, therefore the first box across ([1,0]) will have the minimum distance 
+                dmax = np.sqrt((np.amax(unrotLat2d)**2) + (np.amax(unrotLon2d)**2)) # [km] - diag distance to opposite corner of domain
+                
+                dd = (dmax - dmin) / nlags # average nlag spacing
+                bins = [dmin + n * dd for n in range(nlags)]
+                dmax += 0.001 
+                bins.append(dmax)
+                
+                # setup arrays to be filled
+                lags = np.zeros(nlags) # average actual distance between points within each lag bin (e.g could be 1.31 km for bin range 1 - 2 km)
+                
+                # set up semivariance array ready
+                #semivariance = np.zeros(nlags) # semivariance within each lag bin
+                #semivariance[:] = np.nan
+                
+                # sample size for each lag. Start at 0 and add them up as more idx pairs are found
+                #m = np.zeros(nlags)
+                
+                # maximum idx position for each dimension
+                idx_max = [j - 1 for j in data.shape]
+                
+                # create euclidean distance matrix (from point [0,0])
+                # only creates distances for one quadrant (top right) effectively
+                distance = np.sqrt((unrotLat2d**2) + (unrotLon2d**2))
+                
         
-        if os.path.exists(savesubdir) == False:
-            os.mkdir(savesubdir)
-        plt.savefig(savesubdir + savename)
-        plt.close()
-
-        # # look at variogram_model_parameters to find the nugget, sill etc.
-        # #! list order varies, depending on the variogram_model used!
-        # #! gives back partial sill (full sill - nugget), not the full sill
-        if variogram_model == 'spherical':
-             sill[height_idx] = OK.variogram_model_parameters[0]
-             v_range[height_idx] = OK.variogram_model_parameters[1]
-             nugget[height_idx] = OK.variogram_model_parameters[2]
-
-        # plt.figure()
-        # plt.hist(data.flatten(), bins=50)
-
-        # np.argsort(U_mean)
+                # find idx linked to this h        
+                
+                semivariance_full, m_full = all_semivariance(bins, data, distance, idx_max)
+                
+                print 'semivariance_full'
+                print semivariance_full
+                print 'm_full'
+                print m_full
+                
+                #fig = d.visualise()
+                #plt.savefig(daskmapsavedir + 'debugging_map.png')
+                #a = d.compute()
+                
+                print'\n\n\n\n\n'
+        
+                
+                semivariance = semivariance_full
+                m = m_full
+                
+                # choose variogram model based on cross validation test reslts
+                variogram_model = 'spherical'
+                variogram_function = variogram_models.spherical_variogram_model
+                weight = True
+        
+                # with the bins and semivariance, do the fitting
+                variogram_model_parameters = \
+                        _calculate_variogram_model(lags, semivariance, variogram_model,
+                                                   variogram_function, weight)
+        
+                # plot variogram
+                fig = plt.figure()
+                ax = fig.add_subplot(111)
+                ax.plot(lags, semivariance, 'r*')
+                ax.plot(lags,
+                        variogram_function(variogram_model_parameters,
+                                                lags), 'k-')
+        
+                ax = plt.gca()
+                plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height=' + str(mod_data['level_height'][0]) + 'm')
+                ax.set_xlabel('Distance [km]')
+                ax.set_ylabel('Semi-variance')
+                savesubdir = variogramsavedir + hr.strftime('%Y-%m-%d') + '/'
+                savename = hr.strftime('%Y-%m-%d_%H') +  '_{:05.0f}'.format(mod_data['level_height'][0]) + 'm_variogram'
+                
+                if os.path.exists(savesubdir) == False:
+                    os.mkdir(savesubdir)
+                plt.savefig(savesubdir + savename)
+                plt.close()
+        
+        #         # Ordinary Kriging: 3.1.1 in pykrige documentation
+        #         # Function fails when given 2D arrays so pass in flattened 1D arrays of the 2D data.
+        #         OK = OrdinaryKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(),
+        #                              variogram_model=variogram_model, nlags=1440, weight=True, enable_plotting=True) # verbose=True,enable_plotting=True,
+        
+        
+                # # look at variogram_model_parameters to find the nugget, sill etc.
+                # #! list order varies, depending on the variogram_model used!
+                # #! gives back partial sill (full sill - nugget), not the full sill
+                if variogram_model == 'spherical':
+                     sill[height_idx] = variogram_model_parameters[0]
+                     v_range[height_idx] = variogram_model_parameters[1]
+                     nugget[height_idx] = variogram_model_parameters[2]
+        
+                # plt.figure()
+                # plt.hist(data.flatten(), bins=50)
+        
+                # np.argsort(U_mean)
         # np.array(U_mean)[np.argsort(U_mean)]
 
         # ==============================================================================
