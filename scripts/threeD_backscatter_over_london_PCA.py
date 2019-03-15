@@ -19,6 +19,7 @@ import os
 import math
 import datetime as dt
 from sklearn.decomposition import PCA
+import pandas as pd
 
 import ellUtils.ellUtils as eu
 import ceilUtils.ceilUtils as ceil
@@ -104,6 +105,126 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
 
     return mod_data
 
+def varimax(loadings, normalize=True, max_iter=500, tolerance=1e-5, output_type='numpy.array'):
+
+    """
+    Perform varimax (orthogonal) rotation, with optional
+    Kaiser normalization.
+
+    Taken from Factor_analyzer, created by Jeremy Biggs (jbiggs@ets.org)
+
+    Added keyword arg (output_type) to change output to a numpy.array by default
+        (or keep as pandas.DataFrame)
+
+
+    Parameters
+    ----------
+    loadings : pd.DataFrame
+        The loadings matrix to rotate.
+    normalize : bool, optional
+        Whether to perform Kaiser normalization
+        and de-normalization prior to and following
+        rotation.
+        Defaults to True.
+    max_iter : int, optional
+        Maximum number of iterations.
+        Defaults to 500.
+    tolerance : float, optional
+        The tolerance for convergence.
+        Defaults to 1e-5.
+    output_type : bool, optional
+        return the rotated matrix as a numpy array or pandas dataframe
+        Defaults to numpy.array
+
+    Return
+    ------
+    loadings : pd.DataFrame
+        The loadings matrix
+        (n_cols, n_factors)
+    rotation_mtx : np.array
+        The rotation matrix
+        (n_factors, n_factors)
+    """
+    df = loadings.copy()
+
+    # since we're transposing the matrix
+    # later, we want to reverse the column
+    # names and index names from the original
+    # factor loading matrix at this point
+    column_names = df.index.values
+    index_names = df.columns.values
+
+    n_rows, n_cols = df.shape
+
+    if n_cols < 2:
+        return df
+
+    X = df.values
+
+    # normalize the loadings matrix
+    # using sqrt of the sum of squares (Kaiser)
+    if normalize:
+        normalized_mtx = df.apply(lambda x: np.sqrt(sum(x**2)),
+                                  axis=1).values
+
+        X = (X.T / normalized_mtx).T
+
+    # initialize the rotation matrix
+    # to N x N identity matrix
+    rotation_mtx = np.eye(n_cols)
+
+    d = 0
+    for _ in range(max_iter):
+
+        old_d = d
+
+        # take inner product of loading matrix
+        # and rotation matrix
+        basis = np.dot(X, rotation_mtx)
+
+        # transform data for singular value decomposition
+        transformed = np.dot(X.T, basis**3 - (1.0 / n_rows) *
+                             np.dot(basis, np.diag(np.diag(np.dot(basis.T, basis)))))
+
+        # perform SVD on
+        # the transformed matrix
+        U, S, V = np.linalg.svd(transformed)
+
+        # take inner product of U and V, and sum of S
+        rotation_mtx = np.dot(U, V)
+        d = np.sum(S)
+
+        # check convergence
+        if old_d != 0 and d / old_d < 1 + tolerance:
+            break
+
+    # take inner product of loading matrix
+    # and rotation matrix
+    X = np.dot(X, rotation_mtx)
+
+    # de-normalize the data
+    if normalize:
+        X = X.T * normalized_mtx
+
+    else:
+        X = X.T
+
+    # if output_type == 'numpy.array':
+    #     loadings = X.T
+    # elif output_type == 'pandas.DataFrame':
+    #     # convert loadings matrix to data frame
+    #     loadings = pd.DataFrame(X,
+    #                             columns=column_names,
+    #                             index=index_names).T
+    # else:
+    #     raise ValueError('output_type keyword is not recognised as an option. Choose numpy.array or pandas.DataFrame')
+
+    loadings = pd.DataFrame(X,
+                            columns=column_names,
+                            index=index_names).T
+
+    return loadings, rotation_mtx
+
 # Plotting
 def plot_EOFs_height_i(pca, ceil_metadata, lons, lats, eofsavedir,
                        days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var):
@@ -147,6 +268,48 @@ def plot_EOFs_height_i(pca, ceil_metadata, lons, lats, eofsavedir,
 
     return
 
+def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedir,
+                       days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var, matrix_type):
+
+    """Plot all EOFs for this height - save in eofsavedir (should be a subdirectory based on subsampled input data)"""
+
+    for m_idx in np.arange(matrix[0]):
+
+        # etract out eof_i
+        m_i = matrix[m_idx, :]
+
+        # NEED to check if this is rotated back correctly (it might need tranposing)
+        # as it was stacked row/latitude wise above (row1, row2, row3)
+        # transpose turns shape into (lat, lon) (seems a little odd but needs to be plotted that
+        #   way by plt.pcolormesh() to get the axis right...
+        eof_i_reshape = np.transpose(
+            np.vstack([m_i[n:n + lat_shape] for n in np.arange(0, X_shape, lat_shape)]))  # 1225
+
+        fig, ax = plt.subplots(1, 1, figsize=(4.5 * aspectRatio, 4.5))
+        plt.pcolormesh(lons, lats, eof_i_reshape)
+        plt.colorbar()
+        ax.set_xlabel(r'$Longitude$')
+        ax.set_ylabel(r'$Latitude$')
+
+        # highlight highest value across EOF
+        eof_i_max_idx = np.where(eof_i_reshape == np.max(eof_i_reshape))
+        plt.scatter(lons[eof_i_max_idx][0], lats[eof_i_max_idx][0], facecolors='none', edgecolors='black')
+        plt.annotate('max', (lons[eof_i_max_idx][0], lats[eof_i_max_idx][0]))
+
+        # plot each ceilometer location
+        for site, loc in ceil_metadata.iteritems():
+            # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
+            plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
+            plt.annotate(site, (loc[0], loc[1]))
+
+        plt.suptitle(matrix_type + str(m_idx + 1) + '; height=' + height_i_label + str(
+            len(days_iterate)) + ' cases')
+        savename = height_i_label +'_'+matrix_type + str(m_idx + 1) + '_' + data_var + '.png'
+        plt.savefig(matrixsavedir + savename)
+        plt.close(fig)
+
+    return
+
 def line_plot_exp_var_vs_EOF(perc_explained, height_i_label, days_iterate, expvarsavedir):
     """Plot the accumulated explained variance across the kept EOFs"""
 
@@ -164,17 +327,17 @@ def line_plot_exp_var_vs_EOF(perc_explained, height_i_label, days_iterate, expva
 
     return
 
-def line_plot_PCs_vs_days_iterate(pcs, days_iterate, pcsavedir):
+def line_plot_PCs_vs_days_iterate(pc_scores, days_iterate, pcsavedir):
 
     """Plot the EOFs paired PCs, against the days_iterate (x axis)"""
 
-    for pc_idx in np.arange(pcs.shape[-1]):
+    for pc_idx in np.arange(pc_scores.shape[-1]):
 
         fig, ax = plt.subplots(1, 1, figsize=(7, 4))
 
         # normalise PC so it is clear, then plot
         # pc_norm = (pcs[:, pc_idx] - np.mean(pcs[:, pc_idx])/np.std(pcs[:, pc_idx]))
-        pc_norm = pcs[:, pc_idx]  # / np.mean(pcs[:, pc_idx])
+        pc_norm = pc_scores[:, pc_idx]  # / np.mean(pcs[:, pc_idx])
         plt.plot(pc_norm, label='PC' + str(pc_idx + 1))
 
         # set tick locations - 1 for each day
@@ -329,19 +492,58 @@ if __name__ == '__main__':
         # print(P.T)
 
 
-        # new method using a package
-        pca = PCA(10)
-        # fit on data
+        # method using a package
+        # create PCA instance
+        pca = PCA(20)
+        # fit on data (creates covariance matrix etc, inside the package)
         pca.fit(data)
+
         # access values and vectors
-        #print(pca.components_) # vectors
-        #print(pca.explained_variance_) # values/EOFs
-        perc_explained = pca.explained_variance_ratio_
-        # pca.explained_variance_ratio_ # actual percentage explained by each principal comopnent and EOF
+
+        var_explained_unrot = pca.explained_variance_ # variance explained by each eigenvector
+        var_explained_ratio_unrot = pca.explained_variance_ratio_
+        perc_var_explained_ratio_unrot = pca.explained_variance_ratio_*100.0 # actual percentage explained by each principal comopnent and EOF
         # transform data
-        pcs = pca.transform(data) # PCs
+        pc_scores = pca.transform(data) # PC scores (composed of vectors)
         # reshape components back to 2D grid and plot
-        eof = pca.components_[0,:]
+        eig_vecs = pca.components_.T # eigenvectors (composed of vectors)
+        eig_vals = pca.explained_variance_ # eigenvalues (composed of scalers)
+        # use .T to keep the same shape as eig_vecs
+        loadings = np.array([eig_vecs[:, i] * np.sqrt(eig_vals[i]) for i in range(len(eig_vals))]).T # loadings
+
+        # rotate the loadings to spread out the eplained variance between all the kept vectors
+        loadings_pd = pd.DataFrame(loadings)
+        rot_loadings, rot_matrix = varimax(loadings_pd, output_type='numpy.array')
+        rot_loadings = np.array(rot_loadings)
+        # reorder rotated loadings as the order might have changed after the rotation
+
+        def rotated_loading_reorder(rot_loadings):
+            # Taken from Lee
+            # adapted to get ratio
+
+            # Actual variance explained of orig dataset by each eigenvector (e.g. sum() = 79...)
+            # var_explained_rot.sum() ~= var_explained_unrot.sum() (just spread out values)
+            # shape is (loading_i, X_i) where X_i is spatial location, therefore axis to sum along is 0
+            var_explained_rot = np.sum(rot_loadings ** 2.0, axis=0) #
+
+            # percentage each eigenvector explains of the current set of eigenvectors (sum = 1.0)
+            # this is only a part of the orig though so each %value here will be a little too high!
+            # perc_current_rot_set = (var_explained_rot / var_explained_rot.sum())
+            # Hence, use approach below this!
+
+            # actual percentage each eigenvector explains of the ORIGINAL total set of eigenvectors (sum != 1.0).
+            # Same calc as above, but scale the %values DOWN based on (total var % explained in the unrotated subset
+            #   e.g. var_explained_ratio_unrot.sum() = 0.98 of original !KEY unrotated ratio)
+            #   i.e. if original subset had 0.98 of variance, scale these percentages down using 0.98 as the coefficient
+            subset_total_var = var_explained_rot.sum() # total variance in current subset
+            remaining_ratio_var_original = var_explained_ratio_unrot.sum() # how much of the variance is left from original e.g. 0.98
+            var_explained_ratio_rot = (var_explained_rot / subset_total_var) * remaining_ratio_var_original
+            perc_var_explained_ratio_rot = var_explained_ratio_rot * 100.0
+            # var_explained_ratio_rot = (var_explained_rot / var_explained_rot.sum()) * var_explained_ratio_unrot.sum()
+
+
+            #ToDo! Now reorder the data like in Lee! The positions have changed!
+
 
         # ---------------------------------------------------------
         # Plotting
@@ -354,11 +556,18 @@ if __name__ == '__main__':
         plot_EOFs_height_i(pca, ceil_metadata, lons, lats, eofsavedir,
                            days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var)
 
+        plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedir,
+                                     days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
+                                     matrix_type)
+
+        plot_loadings_height_i(pca, ceil_metadata, lons, lats, eofsavedir,
+                           days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var, rotated=True)
+
         # 2. Explain variance vs EOF number
         line_plot_exp_var_vs_EOF(perc_explained, height_i_label, days_iterate, expvarsavedir)
 
         # 3. PC timeseries
-        line_plot_PCs_vs_days_iterate(pcs, days_iterate, pcsavedir)
+        line_plot_PCs_vs_days_iterate(pc_scores, days_iterate, pcsavedir)
 
 
 
