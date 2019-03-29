@@ -23,6 +23,10 @@ import math
 import datetime as dt
 from sklearn.decomposition import PCA
 import pandas as pd
+from scipy.stats import spearmanr
+from scipy.stats import pearsonr
+#from scipy.linalg import eigh
+#from scipy.linalg import inv
 
 import ellUtils.ellUtils as eu
 import ceilUtils.ceilUtils as ceil
@@ -59,8 +63,17 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
         idx_end = eu.binary_search_nearest(mod_data_day['time'], end)
         idx_range = np.arange(idx_start, idx_end + 1)
 
-        for key in ['aerosol_for_visibility', 'time', 'RH', 'backscatter']:
+        # extract out met variables with a time dimension
+        met_vars = mod_data_day.keys()
+        for none_met_var in ['longitude', 'latitude', 'level_height', 'time']:
+            if none_met_var in met_vars: met_vars.remove(none_met_var)
+
+        for key in met_vars:
             mod_data_day[key] = mod_data_day[key][idx_range, ...]
+        mod_data_day['time'] = mod_data_day['time'][idx_range, ...]
+
+        # for key in ['aerosol_for_visibility', 'time', 'RH', 'backscatter']:
+        #     mod_data_day[key] = mod_data_day[key][idx_range, ...]
 
         return mod_data_day
 
@@ -75,8 +88,9 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
 
         # extract out met variables with a time dimension
         met_vars = mod_data_day.keys()
-        for none_met_var in ['longitude', 'latitude', 'level_height']:
-            if none_met_var in met_vars: met_vars.remove(none_met_var)
+        for none_met_var in ['longitude', 'latitude', 'level_height', 'time']:
+            if none_met_var in met_vars:
+                met_vars.remove(none_met_var)
 
         # remove the last hour of time (hr 24, or hr 0 of the next day) as it may overlap across different cases
         # [:-1, ...] works with 1D arrays and up
@@ -113,7 +127,7 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
 def flip_vector_sign(matrix):
     for i in range(matrix.shape[1]):
         if matrix[:, i].sum() < 0:
-            matrix[:, i] *= -1
+            matrix[:, i] *= -1.0
     return matrix
 
 def varimax(matrix, normalize=True, max_iter=500, tolerance=1e-5, output_type='numpy.array'):
@@ -441,7 +455,8 @@ if __name__ == '__main__':
     # --- User changes
 
     # data variable to plot
-    data_var = 'backscatter'
+    # data_var = 'backscatter'
+    data_var = 'air_temperature'
     # data_var = 'RH'
 
     height_range = np.arange(0, 30) # only first set of heights
@@ -451,8 +466,8 @@ if __name__ == '__main__':
     numpy_save = True
 
     # subsampled?
-    pcsubsample = 'full'
-    # pcsubsample = '11-18_hr_range'
+    #pcsubsample = 'full'
+    pcsubsample = '11-18_hr_range'
 
     # ------------------
 
@@ -484,8 +499,8 @@ if __name__ == '__main__':
               '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
               '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
     days_iterate = eu.dateList_to_datetime(daystr)
-    a = [i.strftime('%Y%j') for i in days_iterate]
-    '\' \''.join(a)
+    #a = [i.strftime('%Y%j') for i in days_iterate]
+    #'\' \''.join(a)
 
     # save name
     # savestr = day.strftime('%Y%m%d') + '_3Dbackscatter.npy'
@@ -518,14 +533,14 @@ if __name__ == '__main__':
     ceilsitefile = 'improveNetworksCeils.csv'
     ceil_metadata = ceil.read_ceil_metadata(datadir, ceilsitefile)
 
-    #height_idx = 12
+    height_idx = 12
 
     #for height_idx in [height_idx]:
-    for height_idx in np.arange(10,30): # np.arange(26,30): # max 30 -> ~ 3.1km
+    for height_idx in [18]: #np.arange(10,30): # np.arange(26,30): # max 30 -> ~ 3.1km
 
-        # 4/6/18 seems to be missing hr 24 (hr 23 gets removed by accident as a result...)
-        # mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx, hr_range=[11,18])
-        mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx)
+        # 4/6/18 seems to be missing hr 24 (hr 23 gets removed by accident as a result...) - first day in days_iterate
+        mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx, hr_range=[11,18])
+        # mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx)
 
         # extract out the height for this level
         height_i = mod_data['level_height']
@@ -540,6 +555,8 @@ if __name__ == '__main__':
         # extract out the data (just over London for the UKV)
         if data_var == 'backscatter':
             data = np.log10(mod_data[data_var][:, :, lon_range])
+        elif data_var == 'air_temperature':
+            data = mod_data[data_var][:, :, lon_range]
         else:
             raise ValueError('need to specify how to extract data if not backsatter')
 
@@ -552,33 +569,51 @@ if __name__ == '__main__':
         # Stacked latitudinally, as we are cutting into the longitude for each loop of i
         data = np.hstack(([data[:, :, i] for i in np.arange(lon_shape)]))
 
+        # 1. ------ numpy.eig or scipy.eigh (the latter is apparently more numerically stable wrt square matricies)
         # (695L, 35L, 35L) - NOTE! reshape here is different to above! just use the syntatically messier version
         #   as it is actually clearer that the reshaping is correct!
         # data2 = np.reshape(data, (695, 1225))
         # mean center each column
         M = np.mean(data.T, axis=1)
-        data_norm = data - M
+        data_m = data - M
+        data_m_norm = data_m / np.std(data.T, axis=1)
+        # data_m_norm = data_m / np.std(data_m)
+        # cov_data = np.cov(data_m.T)
+        # cov_data_normed = np.cov(data_m_norm.T)
+        cov_data = np.cov(data_m.T)
+        cov_norm_data = np.cov(data_m_norm.T)
+        corr_data = np.corrcoef(data_m.T)
+        corr_norm_data = np.corrcoef(data_m_norm.T)
+
+        # deal with ill-conditioned correlation matrix
+        corr_data[corr_data >= 0.995] = 0.995
+        for i in range(corr_data.shape[0]):
+                corr_data[i,i] = 1.0
+
         # calculate covariance matrix of centered matrix
-        V = np.cov(data_norm.T)
+        V = np.cov(data_m.T)
         # eigendecomposition of covariance matrix
+        # numpy eig has issues with numerical instability and rounding...
+        #   https://towardsdatascience.com/my-notes-for-singular-value-decomposition-with-interactive-code-feat-peter-mills-7584f4f2930a
         values, vectors = np.linalg.eig(V)
         # project data
-        P = vectors.T.dot(data_norm.T) # eq 12.1 of Wilk 2011
+        P = vectors.T.dot(data_m.T) # eq 12.1 of Wilk 2011
         #print(P.T)
 
-        # mean center each column
-        #M = np.mean(data, axis=0)
-        data_m = data - M # checked and works fine
-        data_m_norm = data_m / np.std(data.T, axis=1)
+        # # 2. alt
+        # values2, vectors2 = eigh(V) # gives negative eig_vals not close to 0...
+        # idx = values2.argsort()[::-1]
+        # vectors2 = vectors2[:, idx]
+        # values2 = values2[idx]
+        # P = vectors2.T.dot(data_m.T) # eq 12.1 of Wilk 2011
 
-        # calculate covariance matrix of centered matrix (column wise)
-        # cov_data = np.cov(data_m.T) # use pca.get_oovariance() instead - diff estimate of covariance
-        cov_data2 = np.cov(data.T)
-        # corr_data = np.corrcoef(data_m.T)
 
-        # # method using a package
-        # # create PCA instance
-        pca = PCA(20)
+
+
+        # 2. ------ package
+        # method using a package
+        # create PCA instance
+        pca = PCA(5)
         # # fit on data (creates covariance matrix etc, inside the package)
         pca.fit(data)
         # # access values and vectors
@@ -588,23 +623,30 @@ if __name__ == '__main__':
         # # transform data
         pc_scores = pca.transform(data) # PC scores (composed of vectors) # eq 12.1 Wilk 2011
         # # reshape components back to 2D grid and plot
-        # eig_vecs = pca.components_.T # eigenvectors (composed of vectors)
+        eig_vecs_pca = pca.components_.T # eigenvectors (composed of vectors)
         # # make eigenvectors positive
         # eig_vecs = flip_vector_sign(eig_vecs) # will have no effect if package is used
-        # eig_vals = pca.explained_variance_ # eigenvalues (composed of scalers)
+        eig_vals_pca = pca.explained_variance_ # eigenvalues (composed of scalers)
         # # use .T to keep the same shape as eig_vecs
         # pca_cov = pca.get_covariance()
+        #
+        # # Note pca.get_covariance() and np.cov() give different covariance matricies! Therefore use pca func if using
+        # #   it's outputs.
+        # # no need to sort afterward, already in order with highest eig_val to lowest
+        # #    also, no need to flip signs as vectors are already in the positive directions
 
-        # Note pca.get_covariance() and np.cov() give different covariance matricies! Therefore use pca func if using
-        #   it's outputs.
-        cov_data = np.cov(data_m.T)
-        # no need to sort afterward, already in order with highest eig_val to lowest
-        #    also, no need to flip signs as vectors are already in the positive directions
+        # WHAT GETS TAKEN FORWARD
+        #a = np.corrcoef(data_m.T)
+        #U, S, V = np.linalg.svd(a)
+        # U, S, V = np.linalg.svd(cov_data)
         U, S, V = np.linalg.svd(cov_data)
-        #U, S, V = np.linalg.svd(corr_data)
-        eig_vals = S
-        eig_vecs = V.T
-        #eig_vals, eig_vecs = np.linalg.eig(cov_data) # same as above but this makes complex numbers for some reason...
+        eig_vals = S # first eigenvalue at height_idx=12, height_i=645m is 18695 if covariance matrix used...
+        eig_vecs = flip_vector_sign(V.T)
+
+        # done on data_m in pca package but values etc afterwards are calculated differently to Wilks 2011...
+        #U, S, V = np.linalg.svd(data_m)
+        #eig_vals = S
+        #eig_vecs = V.T
 
         # # variance explained (copied from pca package) - gives odd values....
         # # Get variance explained by singular values
@@ -621,10 +663,13 @@ if __name__ == '__main__':
         # keep first n components that have eig_vals >= 1
         bool_components_keep = (eig_vals >= 1.0)
         n_components_keep = sum(bool_components_keep)
+        n_components_keep = 5
 
         # calculate loadings for the kept PCs
         # same loading values as if the pca package was used
-        loadings = eig_vecs[:, bool_components_keep] * np.sqrt(eig_vals[bool_components_keep]) #.shape(Xi, PCs)
+        # loadings = eig_vecs[:, bool_components_keep] * np.sqrt(eig_vals[bool_components_keep]) #.shape(Xi, PCs)
+        # loadings = eig_vecs[:, :n_components_keep] * np.sqrt(eig_vals[:n_components_keep]) #.shape(Xi, PCs)
+        loadings = eig_vecs[:, :n_components_keep] * np.sqrt(eig_vals[:n_components_keep]) #.shape(Xi, PCs)
 
         # make vector directions all positive (sum of vectors > 0) for consistency.
         # As eigenvector * constant = another eigenvector, mmultiply vectors with -1 if sum() < 0.
@@ -632,14 +677,54 @@ if __name__ == '__main__':
         # rotate the loadings to spread out the eplained variance between all the kept vectors
         #loadings = np.array([eig_vecs[:, i] * np.sqrt(eig_vals[i]) for i in range(len(eig_vals))]).T # loadings
         loadings_pd = pd.DataFrame(loadings)
-        rot_loadings, rot_matrix = varimax(loadings_pd, output_type='numpy.array')
+        rot_loadings, rot_matrix = varimax(loadings_pd)
         rot_loadings = np.array(rot_loadings)
         rot_loadings = flip_vector_sign(rot_loadings)
         # reorder rotated loadings as the order might have changed after the rotation
 
-        # get rotated PC scores (do not behave quite the same as unrotated PCs)
-        #rot_pcScores = rot_loadings.dot(data_m)#  data_m.dot(rot_loadings) # eq 12.2 (Wilks 2011)
-        rot_pcScores = data_m.dot(rot_loadings)
+        #
+        rot_eig_vals = np.sum(rot_loadings ** 2, axis=0)
+
+        #np.savetxt(savedir + 'air_temp.csv', data, delimiter=',')
+
+        # # Get rotated PC scores (do not behave quite the same as unrotated PCs)
+        # # Transpose to get the columns being different PCs
+        # # Just doesn't seem to work...
+        # rot_pcScores = (rot_loadings.T).dot(data_m.T).T#  data_m.dot(rot_loadings) # eq 12.2 (Wilks 2011)
+        # rot_pcScores_i = rot_loadings[:,2].dot(data_m_norm.T)
+        # a=(rot_pcScores_i - np.mean(rot_pcScores_i))/np.std(rot_pcScores_i)
+        # rot_eig_vals = np.sum(rot_loadings**2, axis=0)
+        # #rot_pcScores.T / np.sqrt(rot_eig_vals)
+
+        # SPSS rescaled loadings... why they use this?!!?! \Delta_m,R = ([diag \Sigma]^-1/2 )*\Delta_m
+        #   \Delta_m = mth rotated loading; \Sigma = covariance matrix
+        # Matches 'Rotated Component Matrix' Rescaled component (right table)
+        rescaled_loadings=np.vstack([(1.0/np.sqrt(np.diag(cov_data)))*rot_loadings[:,i] for i in range(rot_loadings.shape[-1])]).T
+
+        # still doesn't work, even using the rescaled loadings
+        rot_pcScores_check = np.dot(data_m, rescaled_loadings)
+        rot_pcScores_check /= np.sqrt(rot_eig_vals)
+
+        # rot_pcScores_check = (rot_loadings / np.sqrt(rot_eig_vals)).T.dot(data_m.T)  #
+        rot_pcScores_check = ((data_m_norm).dot(rot_loadings)) / np.sqrt(rot_eig_vals)  #
+
+        r = rot_loadings[:,0]*(np.sqrt(rot_eig_vals[0]/np.diag(cov_data)))
+        #r = rot_loadings[0,0]*(np.sqrt(rot_eig_vals[0]/np.diag(cov_data)[0]))
+
+
+        # attempt at what was in SPSS manual - doesn't work
+        #a = np.linalg.inv(rescaled_loadings.T.dot(rescaled_loadings))
+        #W=rescaled_loadings.dot(a)
+        # a = 1.0/(rot_loadings.T.dot(rot_loadings))
+        # W=rot_loadings.dot(a)
+        #a=rescaled_loadings*(1.0/(rot_eig_vals)) # tried unrotated version... normal and rescaled - also doesn't work
+
+
+        # a = np.linalg.inv(rot_loadings.dot(rot_loadings.T))
+        # W=rot_loadings.T.dot(a)
+
+        #rot_pcScores = data.dot(rot_loadings)
+
 
         # Manual check of the above calculation using the sum of individual element products in eq 12.1 (Wilks 2011)
         # rot_loadings.shape = (1225L, 7L)
@@ -649,13 +734,22 @@ if __name__ == '__main__':
         # # very minor differences between this and [rot_pcScores] due to computational rounding (order 1e-14)
         # rot_pcScore_1 = np.array([np.sum(rot_loadings[:, 0] * (data_m[i,:])) for i in range(data_m.shape[0])])
         # very minor differences between this and [rot_pcScores] due to computational rounding (order 1e-14)
-        rot_pcScore_2 = np.vstack([np.array([np.sum(rot_loadings[:, j] * (data_m[i,:])) for i in range(data_m.shape[0])])
+        rot_pcScores = np.vstack([np.array([np.sum(rot_loadings[:, j] * (data_m[i,:])) for i in range(data_m.shape[0])])
                                  for j in range(rot_loadings.shape[1])]).T
+
+        # as loadings were scaled by sqrt(value), sum of squared loadings should be = value
+        rot_eig_vals = np.sum(rot_loadings**2, axis=0) # also matches with SPSS
+
+        # # pca package way...
+        # rot_pcScores_test = np.dot(data_m, reordered_rot_loadings)
+        # rot_pcScores_test /= np.sqrt(rot_eig_vals) # if whiten(?) is on
+
 
         # get eigenvalues from rotated PC scores
         # As loadings used np.sqrt(eigenvalue) to scale eigenvectors before rotation... variance of new rot. PCs
         #   are the eigenvalue squared (explanation after eq 12.3, Wilks 2011)
-        rot_eig_vals = np.sqrt(np.var(rot_pcScores, axis=0))
+        #### rot_eig_vals = np.sqrt(np.var(rot_pcScores, axis=0))
+
 
         #ToDo this bit below needs reworking slightly!
         reordered_rot_loadings, perc_var_explained_ratio_rot, reorder_idx = \
@@ -664,13 +758,85 @@ if __name__ == '__main__':
         # reorder PC scores
         reordered_rot_pcScores = rot_pcScores[:, reorder_idx]
 
-        # # rotate the vectors to spread out the eplained variance between all the kept vectors
-        # eig_vecs_pd = pd.DataFrame(eig_vecs)
-        # rot_eig_vecs, rot_matrix = varimax(eig_vecs_pd, output_type='numpy.array')
-        # rot_eig_vecs = np.array(rot_eig_vecs)
-        # # reorder rotated vectors as the order might have changed after the rotation
-        # reordered_rot_eig_vecs, perc_var_explained_ratio_rot, reorder_idx = \
-        #     rotated_matrix_explained_and_reorder(rot_eig_vecs, var_explained_ratio_unrot)
+        # Lee
+        df_data = pd.DataFrame(data)
+
+        zscore = (df_data - df_data.mean() ) / df_data.std()
+        #zscore += np.random.rand(224, 1225)*1e-3 # add a little bit of noise to make corr matrix less ill-conditined
+        zscore_corr = np.array(zscore.corr())
+
+        # deal with ill-conditioned matrix by reducing corr a little bit # keep it below 0.995 (any higher is unstable)
+        zscore_corr[zscore_corr >= 0.992] = 0.992
+        for i in range(zscore_corr.shape[0]):
+            zscore_corr[i,i] = 1.0
+
+        # works for reasons unknown to science...
+        # Matches 'Regression' approach in Lee (explained in Field 2005)
+        # Closely matches test SPSS output on air temp; hours 11-18; height idx=12; height i = 645; using correlation matrix
+        #   shape and relative magnitudes are very close, and given we want to subsample original dataset in time correctly,
+        #   this is fine. Output is also weakly correlated, as expected.
+        pcScoreCoeff = np.linalg.inv(zscore_corr).dot(rot_loadings) # regular loadings used orig corr. rotaed used zscore corr
+        pcScoreCoeff[0,:]
+        rot_pcScores=np.array(zscore).dot(pcScoreCoeff) # rot_pcScores_keep
+
+        # check to see how unstable the first PC score is of PC1, wrt the correlation matrix
+        # scores=[]
+        # for j in np.arange(0.950, 0.999, 0.001):
+        #     zscore_corr = np.array(zscore.corr())
+        #     zscore_corr[zscore_corr >= j] = j
+        #     for i in range(zscore_corr.shape[0]):
+        #         zscore_corr[i, i] = 1.0
+        #     a=np.linalg.inv(zscore_corr)
+        #     scores+=[a[0,0]]
+        # plt.figure()
+        # plt.plot(np.arange(0.950, 0.999, 0.001), scores)
+
+        # scale rot PC scores back down
+        #new_eig_values = np.sum(rot_loadings**2, axis=0)
+        #rot_pcScores /= np.sqrt(new_eig_values)
+
+
+        corr_data
+        # inv_corr_data = inv(corr_data)
+        inv_corr_data = np.linalg.inv(corr_data)
+        identity=np.dot(corr_data, inv_corr_data)
+        pcScoreCoeff3 = inv_corr_data.dot(reordered_rot_loadings)
+
+        # Testing issue of high colinearlity amongst the data by subsampling
+        # [0,0] is 1.0 but [1,1] != 1.0 for some reason!
+        # cov matrix looks normal... e.g. element [1,6] = [6,1]
+        cov_data = np.cov(data_m.T)
+        cov_data = cov_data[0:400,0:400]
+        #inv_cov_data = np.linalg.inv(cov_data)
+        inv_cov_data = scipy.linalg.inv(cov_data) # doesn't work
+        identity=np.dot(cov_data, inv_cov_data)
+        pcScoreCoeff4 = inv_cov_data.dot(reordered_rot_loadings)
+        np.linalg.cond(cov_data) > np.finfo(cov_data.dtype).eps # if number is large then matrix is ill-conditioned
+        a = np.linalg.solve(cov_data, np.identity(1225)) #also doesn't work.... and is suposed to be more friendly
+
+        U,S,V = np.linalg.svd(cov_data)
+        inv_cov = V*np.linalg.inv(S)*U.T
+        inv_cov = np.dot(V.T, np.dot(np.diag(S**-1), U.T)) # different to above...
+
+        # below works fine on the diagonal... even when x.shape = (500,500)
+        x = np.random.rand(1225, 1225) * 10000  # makes a 5x5 matrix with elements around 10000
+        xin = np.linalg.inv(x)
+        iden = np.dot(x, xin)
+
+
+        # r, p = pearsonr(reordered_rot_pcScores[:,0], reordered_rot_pcScores[:,1])
+        # for i in range(reordered_rot_pcScores.shape[-1]):
+        #     r, p = pearsonr(reordered_rot_pcScores[:, 0], reordered_rot_pcScores[:, i])
+        #     print 'i='+str(i)+'; r='+str(r)
+
+        for i in range(rot_pcScores.shape[-1]):
+            r, p = pearsonr(rot_pcScores[:, 0], rot_pcScores[:, i])
+            print 'i='+str(i)+'; r='+str(r)
+
+        plt.plot(rot_pcScores[:,0])
+
+
+
 
         # # fast check
         # aspectRatio = float(mod_data['longitude'].shape[0]) / float(mod_data['latitude'].shape[0])
