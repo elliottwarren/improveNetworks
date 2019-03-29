@@ -574,6 +574,8 @@ if __name__ == '__main__':
         #   as it is actually clearer that the reshaping is correct!
         # data2 = np.reshape(data, (695, 1225))
         # mean center each column
+
+        # data prep
         M = np.mean(data.T, axis=1)
         data_m = data - M
         data_m_norm = data_m / np.std(data.T, axis=1)
@@ -610,36 +612,13 @@ if __name__ == '__main__':
 
 
 
-        # 2. ------ package
-        # method using a package
-        # create PCA instance
-        pca = PCA(5)
-        # # fit on data (creates covariance matrix etc, inside the package)
-        pca.fit(data)
-        # # access values and vectors
-        # var_explained_unrot = pca.explained_variance_ # variance explained by each eigenvector
-        var_explained_ratio_unrot = pca.explained_variance_ratio_
-        # perc_var_explained_ratio_unrot = pca.explained_variance_ratio_*100.0 # actual percentage explained by each principal comopnent and EOF
-        # # transform data
-        pc_scores = pca.transform(data) # PC scores (composed of vectors) # eq 12.1 Wilk 2011
-        # # reshape components back to 2D grid and plot
-        eig_vecs_pca = pca.components_.T # eigenvectors (composed of vectors)
-        # # make eigenvectors positive
-        # eig_vecs = flip_vector_sign(eig_vecs) # will have no effect if package is used
-        eig_vals_pca = pca.explained_variance_ # eigenvalues (composed of scalers)
-        # # use .T to keep the same shape as eig_vecs
-        # pca_cov = pca.get_covariance()
-        #
-        # # Note pca.get_covariance() and np.cov() give different covariance matricies! Therefore use pca func if using
-        # #   it's outputs.
-        # # no need to sort afterward, already in order with highest eig_val to lowest
-        # #    also, no need to flip signs as vectors are already in the positive directions
+
 
         # WHAT GETS TAKEN FORWARD
         #a = np.corrcoef(data_m.T)
         #U, S, V = np.linalg.svd(a)
         # U, S, V = np.linalg.svd(cov_data)
-        U, S, V = np.linalg.svd(cov_data)
+        U, S, V = np.linalg.svd(corr_data)
         eig_vals = S # first eigenvalue at height_idx=12, height_i=645m is 18695 if covariance matrix used...
         eig_vecs = flip_vector_sign(V.T)
 
@@ -696,8 +675,8 @@ if __name__ == '__main__':
         # rot_eig_vals = np.sum(rot_loadings**2, axis=0)
         # #rot_pcScores.T / np.sqrt(rot_eig_vals)
 
-        # SPSS rescaled loadings... why they use this?!!?! \Delta_m,R = ([diag \Sigma]^-1/2 )*\Delta_m
-        #   \Delta_m = mth rotated loading; \Sigma = covariance matrix
+        # SPSS rescaled loadings... why/how they use this?!!?! \Delta_m,R = ([diag \Sigma]^-1/2 )*\Delta_m
+        #   \Delta_m = mth rotated loading; \Sigma = covariance matrix (page 409 of SPSS statistics algorithms manual)
         # Matches 'Rotated Component Matrix' Rescaled component (right table)
         rescaled_loadings=np.vstack([(1.0/np.sqrt(np.diag(cov_data)))*rot_loadings[:,i] for i in range(rot_loadings.shape[-1])]).T
 
@@ -766,7 +745,9 @@ if __name__ == '__main__':
         zscore_corr = np.array(zscore.corr())
 
         # deal with ill-conditioned matrix by reducing corr a little bit # keep it below 0.995 (any higher is unstable)
-        zscore_corr[zscore_corr >= 0.992] = 0.992
+        # this eq. to calculate the PC scores is HIGHLY sensitive to the upper cut off used here. Too high and it is
+        #   unstable - too low and it no longer matches the data well enough and is highly noisy.
+        zscore_corr[zscore_corr >= 0.99] = 0.99
         for i in range(zscore_corr.shape[0]):
             zscore_corr[i,i] = 1.0
 
@@ -775,9 +756,17 @@ if __name__ == '__main__':
         # Closely matches test SPSS output on air temp; hours 11-18; height idx=12; height i = 645; using correlation matrix
         #   shape and relative magnitudes are very close, and given we want to subsample original dataset in time correctly,
         #   this is fine. Output is also weakly correlated, as expected.
+        # Justification from Field (p786) The resulting factor score matrix [done this way] represents the relationship
+        #   between each variable and each factor, adjusting for the original relationships between pairs of variables.
+        #   This matrix represents a purer measure of the \i[unique]\i relationship between pairs of variables and factors.
+        #   The above aproach is the 'regression' approach using the correlation matrix is better than the weighted average.
+
+        # NOTE! probably why the normal way of just e_m^T x x' (a weighted average) doesn't work, because the relationships between the
+        #   factor and original variables are not unique! Also if the variance of some variables is far higher than others
+        #   the scores will be be unfairly calculated, as some variables will lead to large contributions
         pcScoreCoeff = np.linalg.inv(zscore_corr).dot(rot_loadings) # regular loadings used orig corr. rotaed used zscore corr
-        pcScoreCoeff[0,:]
         rot_pcScores=np.array(zscore).dot(pcScoreCoeff) # rot_pcScores_keep
+        rot_pcScores[0,:]
 
         # check to see how unstable the first PC score is of PC1, wrt the correlation matrix
         # scores=[]
@@ -906,4 +895,31 @@ if __name__ == '__main__':
 
 
 
+# ----------------------------------------------------
+# Trash code with making the eigenvectors, values, loadings and PCs
+# ----------------------------------------------------
 
+# # 2. ------ package
+# # method using a package
+# # create PCA instance
+# pca = PCA(5)
+# # # fit on data (creates covariance matrix etc, inside the package)
+# pca.fit(data)
+# # # access values and vectors
+# # var_explained_unrot = pca.explained_variance_ # variance explained by each eigenvector
+# var_explained_ratio_unrot = pca.explained_variance_ratio_
+# # perc_var_explained_ratio_unrot = pca.explained_variance_ratio_*100.0 # actual percentage explained by each principal comopnent and EOF
+# # # transform data
+# pc_scores = pca.transform(data) # PC scores (composed of vectors) # eq 12.1 Wilk 2011
+# # # reshape components back to 2D grid and plot
+# eig_vecs_pca = pca.components_.T # eigenvectors (composed of vectors)
+# # # make eigenvectors positive
+# # eig_vecs = flip_vector_sign(eig_vecs) # will have no effect if package is used
+# eig_vals_pca = pca.explained_variance_ # eigenvalues (composed of scalers)
+# # # use .T to keep the same shape as eig_vecs
+# # pca_cov = pca.get_covariance()
+# #
+# # # Note pca.get_covariance() and np.cov() give different covariance matricies! Therefore use pca func if using
+# # #   it's outputs.
+# # # no need to sort afterward, already in order with highest eig_val to lowest
+# # #    also, no need to flip signs as vectors are already in the positive directions
