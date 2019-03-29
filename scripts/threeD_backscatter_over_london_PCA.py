@@ -587,10 +587,10 @@ if __name__ == '__main__':
         corr_data = np.corrcoef(data_m.T)
         corr_norm_data = np.corrcoef(data_m_norm.T)
 
-        # deal with ill-conditioned correlation matrix
-        corr_data[corr_data >= 0.995] = 0.995
-        for i in range(corr_data.shape[0]):
-                corr_data[i,i] = 1.0
+        # # deal with ill-conditioned correlation matrix
+        # corr_data[corr_data >= 0.995] = 0.995
+        # for i in range(corr_data.shape[0]):
+        #         corr_data[i,i] = 1.0
 
         # calculate covariance matrix of centered matrix
         V = np.cov(data_m.T)
@@ -681,8 +681,8 @@ if __name__ == '__main__':
         rescaled_loadings=np.vstack([(1.0/np.sqrt(np.diag(cov_data)))*rot_loadings[:,i] for i in range(rot_loadings.shape[-1])]).T
 
         # still doesn't work, even using the rescaled loadings
-        rot_pcScores_check = np.dot(data_m, rescaled_loadings)
-        rot_pcScores_check /= np.sqrt(rot_eig_vals)
+        #rot_pcScores_check = np.dot(data_m, rescaled_loadings)
+        #rot_pcScores_check /= np.sqrt(rot_eig_vals)
 
         # rot_pcScores_check = (rot_loadings / np.sqrt(rot_eig_vals)).T.dot(data_m.T)  #
         rot_pcScores_check = ((data_m_norm).dot(rot_loadings)) / np.sqrt(rot_eig_vals)  #
@@ -713,11 +713,11 @@ if __name__ == '__main__':
         # # very minor differences between this and [rot_pcScores] due to computational rounding (order 1e-14)
         # rot_pcScore_1 = np.array([np.sum(rot_loadings[:, 0] * (data_m[i,:])) for i in range(data_m.shape[0])])
         # very minor differences between this and [rot_pcScores] due to computational rounding (order 1e-14)
-        rot_pcScores = np.vstack([np.array([np.sum(rot_loadings[:, j] * (data_m[i,:])) for i in range(data_m.shape[0])])
-                                 for j in range(rot_loadings.shape[1])]).T
+        #rot_pcScores = np.vstack([np.array([np.sum(rot_loadings[:, j] * (data_m[i,:])) for i in range(data_m.shape[0])])
+        #                         for j in range(rot_loadings.shape[1])]).T
 
         # as loadings were scaled by sqrt(value), sum of squared loadings should be = value
-        rot_eig_vals = np.sum(rot_loadings**2, axis=0) # also matches with SPSS
+        #rot_eig_vals = np.sum(rot_loadings**2, axis=0) # also matches with SPSS
 
         # # pca package way...
         # rot_pcScores_test = np.dot(data_m, reordered_rot_loadings)
@@ -739,12 +739,13 @@ if __name__ == '__main__':
 
         # Lee
         df_data = pd.DataFrame(data)
-
+        #df_data += np.random.rand(224, 1225)*1e1 # attempt to reduce correlation slightly to help computation but limit impact on results
         zscore = (df_data - df_data.mean() ) / df_data.std()
         #zscore += np.random.rand(224, 1225)*1e-3 # add a little bit of noise to make corr matrix less ill-conditined
-        zscore_corr = np.array(zscore.corr())
+        zscore_cov = np.cov(np.array(zscore).T)
+        zscore_corr = np.array(zscore.corr()) # symetric matrix
 
-        # deal with ill-conditioned matrix by reducing corr a little bit # keep it below 0.995 (any higher is unstable)
+        # deal with ill-conditioned matrix by reducing corr a little bit
         # this eq. to calculate the PC scores is HIGHLY sensitive to the upper cut off used here. Too high and it is
         #   unstable - too low and it no longer matches the data well enough and is highly noisy.
         zscore_corr[zscore_corr >= 0.99] = 0.99
@@ -764,10 +765,33 @@ if __name__ == '__main__':
         # NOTE! probably why the normal way of just e_m^T x x' (a weighted average) doesn't work, because the relationships between the
         #   factor and original variables are not unique! Also if the variance of some variables is far higher than others
         #   the scores will be be unfairly calculated, as some variables will lead to large contributions
+
+        # Need to condition the correlation matrix better to calculate the score coefficients better.
         pcScoreCoeff = np.linalg.inv(zscore_corr).dot(rot_loadings) # regular loadings used orig corr. rotaed used zscore corr
         rot_pcScores=np.array(zscore).dot(pcScoreCoeff) # rot_pcScores_keep
         rot_pcScores[0,:]
 
+        # Need to condition the correlation matrix better to calculate the score coefficients better.
+        # V is given already transposed here, as normally equation is A = U x S x V^T
+        # S is just the diagonal elements. Need to use np.diag(S) to recreate the square diagonal matrix
+        U,S,V = np.linalg.svd(zscore_corr)
+        # corr_inv = np.dot(V.T, (np.dot(np.diag(S**-1.0), U.T)))
+        corr_inv = np.dot(V.T, (np.dot(1.0/np.diag(S), U.T)))
+        act_corr_inv = np.linalg.pinv(zscore_corr, rcond=1e-4) #1e-5 gives the dip...
+        np.allclose(corr_inv, act_corr_inv)
+
+        np.linalg.cond(zscore_corr) > np.finfo(zscore_corr.dtype).eps # if number is large then matrix is ill-conditioned
+        a = np.linalg.solve(corr_inv, np.identity(1225))
+
+        # U,S,V = np.linalg.svd(cov_data)
+        # inv_cov = V*np.linalg.inv(S)*U.T
+        # inv_cov = np.dot(V.T, np.dot(np.diag(S**-1), U.T)) # different to above...
+
+        # pcScoreCoeff = np.linalg.inv(zscore_corr).dot(rot_loadings) # regular loadings used orig corr. rotaed used zscore corr
+        act_corr_inv = np.linalg.pinv(zscore_corr, rcond=1e-3) # 1e-4 and 1e-3 best..., 1e5 is ~ok low as poss. but retain stability
+        pcScoreCoeff = act_corr_inv.dot(rot_loadings)
+        rot_pcScores=np.array(zscore).dot(pcScoreCoeff) # rot_pcScores_keep
+        plt.plot(rot_pcScores[:, 0])
         # check to see how unstable the first PC score is of PC1, wrt the correlation matrix
         # scores=[]
         # for j in np.arange(0.950, 0.999, 0.001):
@@ -803,9 +827,9 @@ if __name__ == '__main__':
         np.linalg.cond(cov_data) > np.finfo(cov_data.dtype).eps # if number is large then matrix is ill-conditioned
         a = np.linalg.solve(cov_data, np.identity(1225)) #also doesn't work.... and is suposed to be more friendly
 
-        U,S,V = np.linalg.svd(cov_data)
-        inv_cov = V*np.linalg.inv(S)*U.T
-        inv_cov = np.dot(V.T, np.dot(np.diag(S**-1), U.T)) # different to above...
+        # U,S,V = np.linalg.svd(cov_data)
+        # inv_cov = V*np.linalg.inv(S)*U.T
+        # inv_cov = np.dot(V.T, np.dot(np.diag(S**-1), U.T)) # different to above...
 
         # below works fine on the diagonal... even when x.shape = (500,500)
         x = np.random.rand(1225, 1225) * 10000  # makes a 5x5 matrix with elements around 10000
