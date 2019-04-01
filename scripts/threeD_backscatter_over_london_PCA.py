@@ -792,21 +792,7 @@ if __name__ == '__main__':
         pcScoreCoeff = act_corr_inv.dot(rot_loadings)
         rot_pcScores=np.array(zscore).dot(pcScoreCoeff) # rot_pcScores_keep
         plt.plot(rot_pcScores[:, 0])
-        # check to see how unstable the first PC score is of PC1, wrt the correlation matrix
-        # scores=[]
-        # for j in np.arange(0.950, 0.999, 0.001):
-        #     zscore_corr = np.array(zscore.corr())
-        #     zscore_corr[zscore_corr >= j] = j
-        #     for i in range(zscore_corr.shape[0]):
-        #         zscore_corr[i, i] = 1.0
-        #     a=np.linalg.inv(zscore_corr)
-        #     scores+=[a[0,0]]
-        # plt.figure()
-        # plt.plot(np.arange(0.950, 0.999, 0.001), scores)
 
-        # scale rot PC scores back down
-        #new_eig_values = np.sum(rot_loadings**2, axis=0)
-        #rot_pcScores /= np.sqrt(new_eig_values)
 
 
         corr_data
