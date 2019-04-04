@@ -27,6 +27,7 @@ from scipy.stats import spearmanr
 from scipy.stats import pearsonr
 #from scipy.linalg import eigh
 #from scipy.linalg import inv
+from scipy.stats import ttest_ind
 
 import ellUtils.ellUtils as eu
 import ceilUtils.ceilUtils as ceil
@@ -242,7 +243,7 @@ def varimax(matrix, normalize=True, max_iter=500, tolerance=1e-5, output_type='n
     return rotated_matrix, rotation_mtx
 
 # rot_loadings, var_explained_ratio_unrot
-def rotated_matrix_explained_and_reorder(rot_loadings, var_explained_ratio_unrot, rot_eig_vals, eig_vals):
+def rotated_matrix_explained_and_reorder(rot_loadings, rot_eig_vals, eig_vals):
 
     """
     Resort the eigenvectors in decending order as the VARIMAX rotation means the largest eigenvectors may not be first.
@@ -259,52 +260,135 @@ def rotated_matrix_explained_and_reorder(rot_loadings, var_explained_ratio_unrot
     # calculate R2 from eq 12.4 of Wilks 2011
     # different to below calculation using Lee. Rotated eigenvectors are scaled by sqrt(eigenvalue) (Wilks  p529, Table 12.3)
     #    therefore loadings **2 should be new eigenvalues...
-    #R2 = np.array([(rot_eig_val_i / np.sum(eig_vals))*100.0 for rot_eig_val_i in rot_eig_vals])
-
-    # Taken from Lee
-    # adapted to get ratio
 
     # Actual variance explained of orig dataset by each eigenvector (e.g. sum() = 79...)
     # var_explained_rot.sum() ~= var_explained_unrot.sum() (just spread out values)
     # shape is (loading_i, X_i) where X_i is spatial location, therefore axis to sum along is 0
     # as ||loading|| = sqrt(eigenvalue), then below calculates that ||loading||**2 = eigenvalue
-    var_explained_rot = np.sum(rot_loadings ** 2.0, axis=0) # eigenvalues
-    var_explained_rot_sum = np.sum(var_explained_rot) # sum of eigenvalues # Lee's looks like a vector, mine is scaler
 
     # percentage each eigenvector explains of the current set of eigenvectors (sum = 1.0)
     # this is only a part of the orig though so each %value here will be a little too high!
     # perc_current_rot_set = (var_explained_rot / var_explained_rot.sum())
     # Hence, use approach below this!
 
-    # actual percentage each eigenvector explains of the ORIGINAL total set of eigenvectors (sum != 1.0).
-    # Same calc as above, but scale the %values DOWN based on (total var % explained in the unrotated subset
-    #   e.g. var_explained_ratio_unrot.sum() = 0.98 of original !KEY unrotated ratio)
-    #   i.e. if original subset had 0.98 of variance, scale these percentages down using 0.98 as the coefficient
-    subset_total_var = var_explained_rot.sum()  # total variance in current subset
-    remaining_ratio_var_original = var_explained_ratio_unrot.sum()  # how much of the variance is left from original e.g. 0.98
-    var_explained_ratio_rot = (var_explained_rot / subset_total_var) * remaining_ratio_var_original
-    perc_var_explained_ratio_rot = var_explained_ratio_rot * 100.0
-    # var_explained_ratio_rot = (var_explained_rot / var_explained_rot.sum()) * var_explained_ratio_unrot.sum()
+    # # actual percentage each eigenvector explains of the ORIGINAL total set of eigenvectors (sum != 1.0).
+    # # Same calc as above, but scale the %values DOWN based on (total var % explained in the unrotated subset
+    # #   e.g. var_explained_ratio_unrot.sum() = 0.98 of original !KEY unrotated ratio)
+    # #   i.e. if original subset had 0.98 of variance, scale these percentages down using 0.98 as the coefficient
+    # subset_total_var = var_explained_rot.sum()  # total variance in current subset
+    # remaining_ratio_var_original = var_explained_ratio_unrot.sum()  # how much of the variance is left from original e.g. 0.98
+    # var_explained_ratio_rot = (var_explained_rot / subset_total_var) * remaining_ratio_var_original
+    # perc_var_explained_ratio_rot = var_explained_ratio_rot * 100.0
+    # # var_explained_ratio_rot = (var_explained_rot / var_explained_rot.sum()) * var_explained_ratio_unrot.sum()
+
+    # fraction of total variance explained by ALL the ORIGINAL eigenvalues (matches SPSS)
+    var_explained = np.array([i/np.sum(eig_vals) for i in rot_eig_vals])
 
     # get and apply reorder idx
     # reorder_idx = perc_var_explained_ratio_rot.argsort()[::-1]
-    reorder_idx = perc_var_explained_ratio_rot.argsort()[::-1]
+    reorder_idx = var_explained.argsort()[::-1]
 
     reordered_matrix = rot_loadings[:, reorder_idx]
-    perc_var_explained_ratio_rot = perc_var_explained_ratio_rot[reorder_idx]
+    perc_var_explained_ratio_rot = var_explained[reorder_idx] * 100.0
 
     return reordered_matrix, perc_var_explained_ratio_rot, reorder_idx
 
+def pinv(a, rcond=1e-15):
+    """
+    Compute the (Moore-Penrose) pseudo-inverse of a matrix.
+
+    Calculate the generalized inverse of a matrix using its
+    singular-value decomposition (SVD) and including all
+    *large* singular values.
+
+    Parameters
+    ----------
+    a : (M, N) array_like
+      Matrix to be pseudo-inverted.
+    rcond : float
+      Cutoff for small singular values.
+      Singular values smaller (in modulus) than
+      `rcond` * largest_singular_value (again, in modulus)
+      are set to zero.
+
+    Returns
+    -------
+    B : (N, M) ndarray
+      The pseudo-inverse of `a`. If `a` is a `matrix` instance, then so
+      is `B`.
+
+    Raises
+    ------
+    LinAlgError
+      If the SVD computation does not converge.
+
+    Notes
+    -----
+    The pseudo-inverse of a matrix A, denoted :math:`A^+`, is
+    defined as: "the matrix that 'solves' [the least-squares problem]
+    :math:`Ax = b`," i.e., if :math:`\\bar{x}` is said solution, then
+    :math:`A^+` is that matrix such that :math:`\\bar{x} = A^+b`.
+
+    It can be shown that if :math:`Q_1 \\Sigma Q_2^T = A` is the singular
+    value decomposition of A, then
+    :math:`A^+ = Q_2 \\Sigma^+ Q_1^T`, where :math:`Q_{1,2}` are
+    orthogonal matrices, :math:`\\Sigma` is a diagonal matrix consisting
+    of A's so-called singular values, (followed, typically, by
+    zeros), and then :math:`\\Sigma^+` is simply the diagonal matrix
+    consisting of the reciprocals of A's singular values
+    (again, followed by zeros). [1]_
+
+    References
+    ----------
+    .. [1] G. Strang, *Linear Algebra and Its Applications*, 2nd Ed., Orlando,
+           FL, Academic Press, Inc., 1980, pp. 139-142.
+
+    Examples
+    --------
+    The following example checks that ``a * a+ * a == a`` and
+    ``a+ * a * a+ == a+``:
+
+    #>>> a = np.random.randn(9, 6)
+    #>>> B = np.linalg.pinv(a)
+    #>>> np.allclose(a, np.dot(a, np.dot(B, a)))
+    True
+    #>>> np.allclose(B, np.dot(B, np.dot(a, B)))
+    True
+
+    """
+    from numpy.linalg.linalg import _makearray, _assertNoEmpty2d, svd, maximum, dot, transpose, multiply, newaxis
+
+    a, wrap = _makearray(a)
+    _assertNoEmpty2d(a)
+    a = a.conjugate()
+    u, s, vt = svd(a, 0)
+    m = u.shape[0]
+    n = vt.shape[1]
+    #cutoff = rcond*maximum.reduce(s)
+    #count=0
+    # for i in range(min(n, m)):
+    #     if s[i] > cutoff:
+    #         s[i] = 1./s[i]
+    #     else:
+    #         s[i] = 0.
+    #         count +=1
+    for i in range(min(n, m)):
+        s[i] = 1./s[i]
+
+    res = dot(transpose(vt), multiply(s[:, newaxis], transpose(u)))
+    #print('tot s='+str(len(s))+'; count='+str(count))
+    return wrap(res)
+
 # Plotting
-def plot_EOFs_height_i(pca, ceil_metadata, lons, lats, eofsavedir,
+def plot_EOFs_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
                        days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var):
 
     """Plot all EOFs for this height - save in eofsavedir (should be a subdirectory based on subsampled input data)"""
 
-    for eof_idx in np.arange(pca.components_.shape[0]):
+    for eof_idx in np.arange(eig_vecs_keep.shape[0]):
 
         # etract out eof_i
-        eof_i = pca.components_[eof_idx, :]
+        eof_i = eig_vecs_keep[eof_idx, :]
 
         # NEED to check if this is rotated back correctly (it might need tranposing)
         # as it was stacked row/latitude wise above (row1, row2, row3)
@@ -560,6 +644,10 @@ if __name__ == '__main__':
         else:
             raise ValueError('need to specify how to extract data if not backsatter')
 
+        # ==============================================================================
+        # PCA
+        # ==============================================================================
+
         # get shape dimensions
         lat_shape = int(data.shape[1])
         lon_shape = int(data.shape[-1])
@@ -582,60 +670,19 @@ if __name__ == '__main__':
         # data_m_norm = data_m / np.std(data_m)
         # cov_data = np.cov(data_m.T)
         # cov_data_normed = np.cov(data_m_norm.T)
-        cov_data = np.cov(data_m.T)
-        cov_norm_data = np.cov(data_m_norm.T)
+        # cov_data = np.cov(data_m.T)
+        cov_data = np.cov(data_m_norm.T) # mathces SPSS this way...
         corr_data = np.corrcoef(data_m.T)
         corr_norm_data = np.corrcoef(data_m_norm.T)
 
-        # # deal with ill-conditioned correlation matrix
-        # corr_data[corr_data >= 0.995] = 0.995
-        # for i in range(corr_data.shape[0]):
-        #         corr_data[i,i] = 1.0
-
-        # calculate covariance matrix of centered matrix
-        V = np.cov(data_m.T)
-        # eigendecomposition of covariance matrix
-        # numpy eig has issues with numerical instability and rounding...
-        #   https://towardsdatascience.com/my-notes-for-singular-value-decomposition-with-interactive-code-feat-peter-mills-7584f4f2930a
-        values, vectors = np.linalg.eig(V)
-        # project data
-        P = vectors.T.dot(data_m.T) # eq 12.1 of Wilk 2011
-        #print(P.T)
-
-        # # 2. alt
-        # values2, vectors2 = eigh(V) # gives negative eig_vals not close to 0...
-        # idx = values2.argsort()[::-1]
-        # vectors2 = vectors2[:, idx]
-        # values2 = values2[idx]
-        # P = vectors2.T.dot(data_m.T) # eq 12.1 of Wilk 2011
-
-
-
-
-
-
         # WHAT GETS TAKEN FORWARD
-        #a = np.corrcoef(data_m.T)
-        #U, S, V = np.linalg.svd(a)
-        # U, S, V = np.linalg.svd(cov_data)
-        U, S, V = np.linalg.svd(corr_data)
+        # U, S, V = np.linalg.svd(corr_data)
+        U, S, V = np.linalg.svd(cov_data)
         eig_vals = S # first eigenvalue at height_idx=12, height_i=645m is 18695 if covariance matrix used...
         eig_vecs = flip_vector_sign(V.T)
 
-        # done on data_m in pca package but values etc afterwards are calculated differently to Wilks 2011...
-        #U, S, V = np.linalg.svd(data_m)
-        #eig_vals = S
-        #eig_vecs = V.T
-
-        # # variance explained (copied from pca package) - gives odd values....
-        # # Get variance explained by singular values
-        # var_explained_unrot = (S ** 2.0) / (float(data.shape[0]) - 1.0)
-        # total_var = var_explained_unrot.sum()
-        # var_explained_ratio_unrot = var_explained_unrot / total_var
-
         # lee's alt version for explained var
         # matches another example online specifically for covarance matrix (near the bottom:
-        #  explained_variance1 = [(i / tot)*100 for i in sorted(eig_vals1, reverse=True)]):
         #  https://towardsdatascience.com/let-us-understand-the-correlation-matrix-and-covariance-matrix-d42e6b643c22
         var_explained_unrot = eig_vals * 100 / np.sum(eig_vals)
 
@@ -646,8 +693,8 @@ if __name__ == '__main__':
 
         # calculate loadings for the kept PCs
         # same loading values as if the pca package was used
-        # loadings = eig_vecs[:, bool_components_keep] * np.sqrt(eig_vals[bool_components_keep]) #.shape(Xi, PCs)
-        # loadings = eig_vecs[:, :n_components_keep] * np.sqrt(eig_vals[:n_components_keep]) #.shape(Xi, PCs)
+        eig_vecs_keep = eig_vecs[:, :n_components_keep]
+        eig_vals_keep = eig_vals[:n_components_keep]
         loadings = eig_vecs[:, :n_components_keep] * np.sqrt(eig_vals[:n_components_keep]) #.shape(Xi, PCs)
 
         # make vector directions all positive (sum of vectors > 0) for consistency.
@@ -659,12 +706,12 @@ if __name__ == '__main__':
         rot_loadings, rot_matrix = varimax(loadings_pd)
         rot_loadings = np.array(rot_loadings)
         rot_loadings = flip_vector_sign(rot_loadings)
-        # reorder rotated loadings as the order might have changed after the rotation
-
-        #
+        # Rotated eigenvalues
         rot_eig_vals = np.sum(rot_loadings ** 2, axis=0)
 
-        #np.savetxt(savedir + 'air_temp.csv', data, delimiter=',')
+        # Weighted average (does not work) # large values, very spiky, highly correlated.
+        rot_scores = np.dot(rot_loadings.T, data_m.T) # Wilks, 2011
+        rot_scores2 = np.dot(data_m, rot_loadings)  # pca package - in base.py:  transform(self, X)
 
         # # Get rotated PC scores (do not behave quite the same as unrotated PCs)
         # # Transpose to get the columns being different PCs
@@ -680,17 +727,6 @@ if __name__ == '__main__':
         # Matches 'Rotated Component Matrix' Rescaled component (right table)
         rescaled_loadings=np.vstack([(1.0/np.sqrt(np.diag(cov_data)))*rot_loadings[:,i] for i in range(rot_loadings.shape[-1])]).T
 
-        # still doesn't work, even using the rescaled loadings
-        #rot_pcScores_check = np.dot(data_m, rescaled_loadings)
-        #rot_pcScores_check /= np.sqrt(rot_eig_vals)
-
-        # rot_pcScores_check = (rot_loadings / np.sqrt(rot_eig_vals)).T.dot(data_m.T)  #
-        rot_pcScores_check = ((data_m_norm).dot(rot_loadings)) / np.sqrt(rot_eig_vals)  #
-
-        r = rot_loadings[:,0]*(np.sqrt(rot_eig_vals[0]/np.diag(cov_data)))
-        #r = rot_loadings[0,0]*(np.sqrt(rot_eig_vals[0]/np.diag(cov_data)[0]))
-
-
         # attempt at what was in SPSS manual - doesn't work
         #a = np.linalg.inv(rescaled_loadings.T.dot(rescaled_loadings))
         #W=rescaled_loadings.dot(a)
@@ -698,61 +734,13 @@ if __name__ == '__main__':
         # W=rot_loadings.dot(a)
         #a=rescaled_loadings*(1.0/(rot_eig_vals)) # tried unrotated version... normal and rescaled - also doesn't work
 
+        # # deal with ill-conditioned matrix by reducing corr a little bit
+        # # this eq. to calculate the PC scores is HIGHLY sensitive to the upper cut off used here. Too high and it is
+        # #   unstable - too low and it no longer matches the data well enough and is highly noisy.
+        # zscore_corr[zscore_corr >= 0.99] = 0.99
+        # for i in range(zscore_corr.shape[0]):
+        #     zscore_corr[i,i] = 1.0
 
-        # a = np.linalg.inv(rot_loadings.dot(rot_loadings.T))
-        # W=rot_loadings.T.dot(a)
-
-        #rot_pcScores = data.dot(rot_loadings)
-
-
-        # Manual check of the above calculation using the sum of individual element products in eq 12.1 (Wilks 2011)
-        # rot_loadings.shape = (1225L, 7L)
-        # data_m.shape = (672L, 1225L)
-        #                     (vector_m for time i) * (data at time i)
-        # # eq 12.1 to check the above method works (which is different to eq 12.2) (Wilks 2011)
-        # # very minor differences between this and [rot_pcScores] due to computational rounding (order 1e-14)
-        # rot_pcScore_1 = np.array([np.sum(rot_loadings[:, 0] * (data_m[i,:])) for i in range(data_m.shape[0])])
-        # very minor differences between this and [rot_pcScores] due to computational rounding (order 1e-14)
-        #rot_pcScores = np.vstack([np.array([np.sum(rot_loadings[:, j] * (data_m[i,:])) for i in range(data_m.shape[0])])
-        #                         for j in range(rot_loadings.shape[1])]).T
-
-        # as loadings were scaled by sqrt(value), sum of squared loadings should be = value
-        #rot_eig_vals = np.sum(rot_loadings**2, axis=0) # also matches with SPSS
-
-        # # pca package way...
-        # rot_pcScores_test = np.dot(data_m, reordered_rot_loadings)
-        # rot_pcScores_test /= np.sqrt(rot_eig_vals) # if whiten(?) is on
-
-
-        # get eigenvalues from rotated PC scores
-        # As loadings used np.sqrt(eigenvalue) to scale eigenvectors before rotation... variance of new rot. PCs
-        #   are the eigenvalue squared (explanation after eq 12.3, Wilks 2011)
-        #### rot_eig_vals = np.sqrt(np.var(rot_pcScores, axis=0))
-
-
-        #ToDo this bit below needs reworking slightly!
-        reordered_rot_loadings, perc_var_explained_ratio_rot, reorder_idx = \
-            rotated_matrix_explained_and_reorder(rot_loadings, var_explained_ratio_unrot, rot_eig_vals, eig_vals)
-
-        # reorder PC scores
-        reordered_rot_pcScores = rot_pcScores[:, reorder_idx]
-
-        # Lee
-        df_data = pd.DataFrame(data)
-        #df_data += np.random.rand(224, 1225)*1e1 # attempt to reduce correlation slightly to help computation but limit impact on results
-        zscore = (df_data - df_data.mean() ) / df_data.std()
-        #zscore += np.random.rand(224, 1225)*1e-3 # add a little bit of noise to make corr matrix less ill-conditined
-        zscore_cov = np.cov(np.array(zscore).T)
-        zscore_corr = np.array(zscore.corr()) # symetric matrix
-
-        # deal with ill-conditioned matrix by reducing corr a little bit
-        # this eq. to calculate the PC scores is HIGHLY sensitive to the upper cut off used here. Too high and it is
-        #   unstable - too low and it no longer matches the data well enough and is highly noisy.
-        zscore_corr[zscore_corr >= 0.99] = 0.99
-        for i in range(zscore_corr.shape[0]):
-            zscore_corr[i,i] = 1.0
-
-        # works for reasons unknown to science...
         # Matches 'Regression' approach in Lee (explained in Field 2005)
         # Closely matches test SPSS output on air temp; hours 11-18; height idx=12; height i = 645; using correlation matrix
         #   shape and relative magnitudes are very close, and given we want to subsample original dataset in time correctly,
@@ -767,113 +755,96 @@ if __name__ == '__main__':
         #   the scores will be be unfairly calculated, as some variables will lead to large contributions
 
         # Need to condition the correlation matrix better to calculate the score coefficients better.
-        pcScoreCoeff = np.linalg.inv(zscore_corr).dot(rot_loadings) # regular loadings used orig corr. rotaed used zscore corr
-        rot_pcScores=np.array(zscore).dot(pcScoreCoeff) # rot_pcScores_keep
-        rot_pcScores[0,:]
-
-        # Need to condition the correlation matrix better to calculate the score coefficients better.
         # V is given already transposed here, as normally equation is A = U x S x V^T
         # S is just the diagonal elements. Need to use np.diag(S) to recreate the square diagonal matrix
-        U,S,V = np.linalg.svd(zscore_corr)
-        # corr_inv = np.dot(V.T, (np.dot(np.diag(S**-1.0), U.T)))
-        corr_inv = np.dot(V.T, (np.dot(1.0/np.diag(S), U.T)))
-        act_corr_inv = np.linalg.pinv(zscore_corr, rcond=1e-4) #1e-5 gives the dip...
-        np.allclose(corr_inv, act_corr_inv)
-
-        np.linalg.cond(zscore_corr) > np.finfo(zscore_corr.dtype).eps # if number is large then matrix is ill-conditioned
-        a = np.linalg.solve(corr_inv, np.identity(1225))
-
-        # U,S,V = np.linalg.svd(cov_data)
-        # inv_cov = V*np.linalg.inv(S)*U.T
-        # inv_cov = np.dot(V.T, np.dot(np.diag(S**-1), U.T)) # different to above...
-
-        # pcScoreCoeff = np.linalg.inv(zscore_corr).dot(rot_loadings) # regular loadings used orig corr. rotaed used zscore corr
-        act_corr_inv = np.linalg.pinv(zscore_corr, rcond=1e-3) # 1e-4 and 1e-3 best..., 1e5 is ~ok low as poss. but retain stability
-        pcScoreCoeff = act_corr_inv.dot(rot_loadings)
+        # Lee
+        df_data = pd.DataFrame(data)
+        #df_data += np.random.rand(224, 1225)*1e1 # attempt to reduce correlation slightly to help computation but limit impact on results
+        zscore = (df_data - df_data.mean() ) / df_data.std()
+        zscore_cov = np.cov(data_m_norm.T)
+        zscore_corr = np.array(zscore.corr()) # symetric matrix
+        # Pseudo-inverse (uses SVD to calculate corr_inv without a dense matrix inversion)
+        # Trial and error used to get 1e-4, output is very close to SPSS (most importantly, the peaks and trough
+        #   locations and relative magnitudes). 1e-4 and 1e-3 best..., 1e5 is ~ok low as possible but retain stability
+        # Set the limit to be so small that it isn't actually used (saftey meausre).
+        corr_inv = pinv(zscore_corr, rcond=1e-55)
+        #corr_inv = np.linalg.inv(zscore_corr) # doesn't invert the matrix well! use above SVD approach
+        pcScoreCoeff = corr_inv.dot(rot_loadings)
         rot_pcScores=np.array(zscore).dot(pcScoreCoeff) # rot_pcScores_keep
-        plt.plot(rot_pcScores[:, 0])
+        #plt.plot(rot_pcScores[:, 0])
 
+        cov_inv = pinv(cov_data, rcond=1e-55)
+        #corr_inv = np.linalg.inv(zscore_corr) # doesn't invert the matrix well! use above SVD approach
+        pcScoreCoeff = cov_inv.dot(rot_loadings)
+        rot_pcScores=np.array(zscore).dot(pcScoreCoeff) # rot_pcScores_keep
 
+        # Order ot leading loadings may have changed, so ensure order is still the most explained variance to the least.
+        reordered_rot_loadings, perc_var_explained_ratio_rot, reorder_idx = \
+            rotated_matrix_explained_and_reorder(rot_loadings, rot_eig_vals, eig_vals)
 
-        corr_data
-        # inv_corr_data = inv(corr_data)
-        inv_corr_data = np.linalg.inv(corr_data)
-        identity=np.dot(corr_data, inv_corr_data)
-        pcScoreCoeff3 = inv_corr_data.dot(reordered_rot_loadings)
+        # reorder PC scores to match loadings
+        reordered_rot_pcScores = rot_pcScores[:, reorder_idx]
 
-        # Testing issue of high colinearlity amongst the data by subsampling
-        # [0,0] is 1.0 but [1,1] != 1.0 for some reason!
-        # cov matrix looks normal... e.g. element [1,6] = [6,1]
-        cov_data = np.cov(data_m.T)
-        cov_data = cov_data[0:400,0:400]
-        #inv_cov_data = np.linalg.inv(cov_data)
-        inv_cov_data = scipy.linalg.inv(cov_data) # doesn't work
-        identity=np.dot(cov_data, inv_cov_data)
-        pcScoreCoeff4 = inv_cov_data.dot(reordered_rot_loadings)
-        np.linalg.cond(cov_data) > np.finfo(cov_data.dtype).eps # if number is large then matrix is ill-conditioned
-        a = np.linalg.solve(cov_data, np.identity(1225)) #also doesn't work.... and is suposed to be more friendly
-
-        # U,S,V = np.linalg.svd(cov_data)
-        # inv_cov = V*np.linalg.inv(S)*U.T
-        # inv_cov = np.dot(V.T, np.dot(np.diag(S**-1), U.T)) # different to above...
-
-        # below works fine on the diagonal... even when x.shape = (500,500)
-        x = np.random.rand(1225, 1225) * 10000  # makes a 5x5 matrix with elements around 10000
-        xin = np.linalg.inv(x)
-        iden = np.dot(x, xin)
-
-
-        # r, p = pearsonr(reordered_rot_pcScores[:,0], reordered_rot_pcScores[:,1])
-        # for i in range(reordered_rot_pcScores.shape[-1]):
-        #     r, p = pearsonr(reordered_rot_pcScores[:, 0], reordered_rot_pcScores[:, i])
+        # check correlation between PCs should be != 0 but not really high (near -1 or 1)
+        # for i in range(rot_pcScores.shape[-1]):
+        #     r, p = pearsonr(rot_pcScores[:, 0], rot_pcScores[:, i])
         #     print 'i='+str(i)+'; r='+str(r)
+        # plt.plot(rot_pcScores[:,0])
 
-        for i in range(rot_pcScores.shape[-1]):
-            r, p = pearsonr(rot_pcScores[:, 0], rot_pcScores[:, i])
-            print 'i='+str(i)+'; r='+str(r)
+        # student-t test (upper/lower 10 percentile PC extracted and compared)
+        met_vars = mod_data.keys()
+        for none_met_var in ['longitude', 'latitude', 'level_height', 'time', data_var]:
+            if none_met_var in met_vars: met_vars.remove(none_met_var)
 
-        plt.plot(rot_pcScores[:,0])
+        # approach - no need now if the SVD approach works ok.
+        # 1. count number of s elements turned to 0
+        # 1. check if correlation matrix really is symmetric (i,j/j,i =1) need a tolerance?
+        #   1.1 enforce symmetry using a tolerence
+        # 2. invert corr_matrix using SVD, then check against identity
+        # 3. check inversion diff = (I - A-1A) and (I - AA-1)
+        #   3.1 check norm of difference (sqrt.sum(squares(diag elements diff))) / (sqrt.sum(squares(diag elements corr matrix)))
+
+        # ==============================================================================
+        # Calculate and save statistics
+        # ==============================================================================
+
+        t_test={}
+        met_avg={}
+        met_med={}
+        met_std={}
+        met_iqr={}
+        # extract data (10% upper and lower limits)
+        perc_limit = 10 # [%]
+        for i in range(reordered_rot_pcScores.shape[-1]):
+            pc_i = reordered_rot_pcScores[:, i]
+            pc_i_name = 'rotPC'+str(i+1) # do not start at 0...
+            t_test[pc_i_name] = {}
+
+            for var in met_vars:
+                # find upper and lower percentiles
+                up_perc = np.percentile(reordered_rot_pcScores[:,i], 100-perc_limit)
+                lower_perc = np.percentile(reordered_rot_pcScores[:, i], perc_limit)
+                # idx positions for all data above or below each percentile
+                top_scores_idx = np.where(reordered_rot_pcScores[:, i] >= up_perc)
+                lower_scores_idx = np.where(reordered_rot_pcScores[:, i] <= lower_perc)
+                #student t-test on original data
+                x = mod_data[var][top_scores_idx, :, :].flatten()
+                y = mod_data[var][lower_scores_idx, :, :].flatten()
+
+                # equal_var=False means ttst_ind is the Welch's t-test (not student t-test)
+                #   https://en.wikipedia.org/wiki/Welch%27s_t-test
+                # This is a two-sided test for the null hypothesis that 2 independent samples have identical average (expected) values
+                #   https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ttest_ind.html
+                t_test[pc_i_name][var]=ttest_ind(x, y, equal_var=False)
+                r = []
+                p = []
+                for i in range(mod_data[var].shape[1]):
+                    for j in range(mod_data[var].shape[2]):
+                        r_i, p_i =  stats.pearsonr(mod_data[var][:,i,j], reordered_rot_pcScores[:,0])
+                        r += [r_i]
+                        p += [p_i]
 
 
-
-
-        # # fast check
-        # aspectRatio = float(mod_data['longitude'].shape[0]) / float(mod_data['latitude'].shape[0])
-        # reordered_loadings_i = reordered_rot_loadings[:, 0]
-        # reordered_loadings_i_reshape = np.transpose(
-        #     np.vstack([reordered_loadings_i[n:n + lat_shape] for n in np.arange(0, X_shape, lat_shape)]))  # 1225
-        # fig, ax = plt.subplots(1, 1, figsize=(4.5 * aspectRatio, 4.5))
-        # plt.pcolormesh(lons, lats, reordered_loadings_i_reshape)
-        # plt.colorbar()
-        # ax.set_xlabel(r'$Longitude$')
-        # ax.set_ylabel(r'$Latitude$')
-
-        # new PC scores for rotated loadings
-        # pca_cov is calculated differently to np.cov() but come out with very similar values (though not the same)
-        # However, np.linalg.inv(pca_cov) produces expected pcScoreCoefficients (100 at most) whereas
-        #     np.linalg.inv(np.cov()) has extremely high and low values! +/- 1e15! No idea why!!
-        #     As pca_cov very close to np.cov() but behaves better with np.linalg.inv(), pca_cov is used hereon.
-        #pcScoreCoeff = np.linalg.inv(pca_cov).dot(reordered_rot_loadings)
-        ######pcScoreCoeff = np.linalg.inv(pca_cov).dot(reordered_rot_loadings) # Lee example is on zScore.corr()
-        # a = np.linalg.inv(cov_data) # has extremely high and low values! +/- 1e15!
-        #   apparently inv(cov_data) is a measure of how tightly packed the values were around the mean
-        #b = np.matrix(cov_data)
-        #test = data * reordered_rot_loadings
-        # explination on p104 later on)
-
-        #plt.figure()
-        #plt.plot(pcScores[:, 0])
-
-        # # new PC scores for rotated loadings
-        # pcScoreCoeff = np.linalg.inv(cov_data).dot(reordered_loadings) # not 100% sure on this one (eq7 of Lee -
-        # # explination on p104 later on)
-        # pcScores = data_m_norm.dot(pcScoreCoeff) # mean centred and / std dev
-        # pcScores = data.dot(pcScoreCoeff) # not changed
-
-        # doesn't work...
-        # cov_new = np.cov(data_m_norm.T)
-        # cscmRotated =  np.linalg.inv(cov_new).dot(reordered_loadings)
-        # pcScoreRotated = cov_new.dot(cscmRotated)
         # ---------------------------------------------------------
         # Plotting
         # ---------------------------------------------------------
@@ -883,7 +854,7 @@ if __name__ == '__main__':
 
         # 1. colormesh() plot the EOFs for this height
         # unrotated
-        plot_EOFs_height_i(pca, ceil_metadata, lons, lats, eofsavedir,
+        plot_EOFs_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
                            days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var)
 
         # rotated EOFs
@@ -891,14 +862,11 @@ if __name__ == '__main__':
                                      days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
                                      'rotEOFs')
 
-        # plot_loadings_height_i(pca, ceil_metadata, lons, lats, eofsavedir,
-        #                    days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var, rotated=True)
-
         # 2. Explain variance vs EOF number
         #line_plot_exp_var_vs_EOF(perc_explained, height_i_label, days_iterate, expvarsavedir)
 
         # 3. PC timeseries
-        line_plot_PCs_vs_days_iterate(pc_scores, days_iterate, pcsavedir, 'PC')
+        #line_plot_PCs_vs_days_iterate(pc_scores, days_iterate, pcsavedir, 'PC')
 
         # rot PC
         line_plot_PCs_vs_days_iterate(reordered_rot_pcScores, days_iterate, rotPCscoresdir, 'rotPC')
