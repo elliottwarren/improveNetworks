@@ -27,7 +27,8 @@ from scipy.stats import spearmanr
 from scipy.stats import pearsonr
 #from scipy.linalg import eigh
 #from scipy.linalg import inv
-from scipy.stats import ttest_ind
+from scipy import stats
+from copy import deepcopy
 
 import ellUtils.ellUtils as eu
 import ceilUtils.ceilUtils as ceil
@@ -81,7 +82,7 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
     # d = 0; day = days_iterate[0]
     for d, day in enumerate(days_iterate):
 
-        print str(day)
+        #print str(day)
 
         # read in all the data, across all hours and days, for one height
         mod_data_day = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, 905, Z=Z, metvars=True,
@@ -117,6 +118,8 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
 
     # get rid of the height dimension where present (only 1 height in the data)
     mod_data = {key: np.squeeze(item) for (key, item) in mod_data.items()}
+
+    print 'data read in...'
 
     # calculate grid centre u and v winds from grid edges
     # will be needed for London model data :(
@@ -446,9 +449,9 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
         ax.set_ylabel(r'$Latitude$')
 
         # highlight highest value across EOF
-        eof_i_max_idx = np.where(eof_i_reshape == np.max(eof_i_reshape))
-        plt.scatter(lons[eof_i_max_idx][0], lats[eof_i_max_idx][0], facecolors='none', edgecolors='black')
-        plt.annotate('max', (lons[eof_i_max_idx][0], lats[eof_i_max_idx][0]))
+        #eof_i_max_idx = np.where(eof_i_reshape == np.max(eof_i_reshape))
+        #plt.scatter(lons[eof_i_max_idx][0], lats[eof_i_max_idx][0], facecolors='none', edgecolors='black')
+        #plt.annotate('max', (lons[eof_i_max_idx][0], lats[eof_i_max_idx][0]))
 
         # plot each ceilometer location
         for site, loc in ceil_metadata.iteritems():
@@ -464,16 +467,16 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
 
     return
 
-def line_plot_exp_var_vs_EOF(perc_explained, height_i_label, days_iterate, expvarsavedir):
+def line_plot_exp_var_vs_EOF(perc_explained, height_i_label, days_iterate, expvarsavedir, matrix_type):
     """Plot the accumulated explained variance across the kept EOFs"""
 
-    perc_explained_cumsum = np.cumsum(perc_explained)
+    #perc_explained_cumsum = np.cumsum(perc_explained)
     fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-    plt.plot(np.arange(1, len(perc_explained_cumsum) + 1), perc_explained_cumsum * 100)
-    plt.xticks(np.arange(1, len(perc_explained_cumsum) + 1, 1.0))
-    fig.suptitle('height=' + height_i_label + '; ' + str(len(days_iterate)) + ' cases')
-    plt.ylabel('explained variance [%]')
-    plt.xlabel('EOF')
+    plt.plot(np.arange(1, len(perc_explained) + 1), perc_explained)
+    plt.xticks(np.arange(1, len(perc_explained) + 1, 1.0))
+    fig.suptitle('height = ' + height_i_label)
+    plt.ylabel('Explained Variance [%]')
+    plt.xlabel(matrix_type) # e.g. 'EOF'
     plt.tight_layout()
     plt.subplots_adjust(top=0.90)
     plt.savefig(expvarsavedir + 'exp_var_' + height_i_label + '.png')
@@ -539,8 +542,8 @@ if __name__ == '__main__':
     # --- User changes
 
     # data variable to plot
-    # data_var = 'backscatter'
-    data_var = 'air_temperature'
+    data_var = 'backscatter'
+    # data_var = 'air_temperature'
     # data_var = 'RH'
 
     height_range = np.arange(0, 30) # only first set of heights
@@ -550,8 +553,8 @@ if __name__ == '__main__':
     numpy_save = True
 
     # subsampled?
-    #pcsubsample = 'full'
-    pcsubsample = '11-18_hr_range'
+    pcsubsample = 'full'
+    # pcsubsample = '11-18_hr_range'
 
     # ------------------
 
@@ -572,7 +575,9 @@ if __name__ == '__main__':
     rotPCscoresdir = savedir + 'rotPCs/'
     pcsavedir = savedir + 'PCs/'
     expvarsavedir = savedir + 'explained_variance/'
-    npysavedir = datadir + 'npy/'
+    rotexpvarsavedir = savedir + 'rot_explained_variance/'
+    barsavedir = savedir + 'barcharts/'
+    npysavedir = datadir + 'npy/PCA/'
 
     # intial test case
     # daystr = ['20180406']
@@ -583,17 +588,17 @@ if __name__ == '__main__':
               '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
               '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
     days_iterate = eu.dateList_to_datetime(daystr)
-    #a = [i.strftime('%Y%j') for i in days_iterate]
-    #'\' \''.join(a)
-
-    # save name
-    # savestr = day.strftime('%Y%m%d') + '_3Dbackscatter.npy'
+    # a = [i.strftime('%Y%j') for i in days_iterate]
+    # '\' \''.join(a)
 
     # import all site names and heights
     all_sites = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']
-
-    # get height information for all the sites
     site_bsc = ceil.extract_sites(all_sites, height_type='agl')
+
+    # define dictionary to contain all the statistics drawn from the EOFs and PCs
+    # prepare level_height array to store each level height, as they are made
+    statistics = {}
+    statistics['level_height'] = np.array([])
 
     # ==============================================================================
     # Read and process data
@@ -602,11 +607,11 @@ if __name__ == '__main__':
     # make directory paths for the output figures
     # pcsubsampledir, then savedir needs to be checked first as they are parent dirs
     for dir_i in [pcsubsampledir, savedir,
-                  eofsavedir, pcsavedir, expvarsavedir, rotEOFsavedir, rotPCscoresdir]:
+                  eofsavedir, pcsavedir, expvarsavedir, rotexpvarsavedir, rotEOFsavedir, rotPCscoresdir]:
         if os.path.exists(dir_i) == False:
             os.mkdir(dir_i)
 
-    # make small text file to make sure the figures used the right subsample technique
+    # make small text file to make sure the figures used the right subsampled data
     with open(savedir + 'subsample.txt', 'w') as file_check:
         file_check.write(pcsubsample)
 
@@ -619,14 +624,14 @@ if __name__ == '__main__':
 
     height_idx = 12
 
-    #for height_idx in [height_idx]:
-    for height_idx in [18]: #np.arange(10,30): # np.arange(26,30): # max 30 -> ~ 3.1km
+    for height_idx in np.arange(30): # np.arange(26,30): # max 30 -> ~ 3.1km
 
         # 4/6/18 seems to be missing hr 24 (hr 23 gets removed by accident as a result...) - first day in days_iterate
         mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx, hr_range=[11,18])
         # mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx)
 
         # extract out the height for this level
+        height_idx_str = str(height_idx)
         height_i = mod_data['level_height']
         height_i_label = '%.1fm' % mod_data['level_height'] # add m on the end
 
@@ -637,12 +642,15 @@ if __name__ == '__main__':
         lons, lats = rotate_lon_lat_2D(mod_data['longitude'][lon_range], mod_data['latitude'], model_type)
 
         # extract out the data (just over London for the UKV)
-        if data_var == 'backscatter':
-            data = np.log10(mod_data[data_var][:, :, lon_range])
-        elif data_var == 'air_temperature':
-            data = mod_data[data_var][:, :, lon_range]
+        if model_type == 'UKV':
+            if data_var == 'backscatter':
+                data = np.log10(mod_data[data_var][:, :, lon_range])
+            elif data_var == 'air_temperature':
+                data = mod_data[data_var][:, :, lon_range]
+            else:
+                raise ValueError('need to specify how to extract data if not backsatter')
         else:
-            raise ValueError('need to specify how to extract data if not backsatter')
+            raise ValueError('Need to change the data extract to deal with other models than UKV, not([:, :, long_range])!')
 
         # ==============================================================================
         # PCA
@@ -667,35 +675,40 @@ if __name__ == '__main__':
         M = np.mean(data.T, axis=1)
         data_m = data - M
         data_m_norm = data_m / np.std(data.T, axis=1)
-        # data_m_norm = data_m / np.std(data_m)
-        # cov_data = np.cov(data_m.T)
+        cov_data = np.cov(data_m.T) # comaprison shows this, rot loadings and PCs mathces SPSS ...
         # cov_data_normed = np.cov(data_m_norm.T)
-        # cov_data = np.cov(data_m.T)
-        cov_data = np.cov(data_m_norm.T) # mathces SPSS this way...
-        corr_data = np.corrcoef(data_m.T)
-        corr_norm_data = np.corrcoef(data_m_norm.T)
+        #corr_data = np.corrcoef(data_m.T)
+        #corr_norm_data = np.corrcoef(data_m_norm.T)
 
         # WHAT GETS TAKEN FORWARD
         # U, S, V = np.linalg.svd(corr_data)
         U, S, V = np.linalg.svd(cov_data)
-        eig_vals = S # first eigenvalue at height_idx=12, height_i=645m is 18695 if covariance matrix used...
-        eig_vecs = flip_vector_sign(V.T)
+        eig_vals = S
+        eig_vecs = flip_vector_sign(V.T) # make sure sign of each eig vec is positive, i.e. ||eig_vec_i|| = 1 (not -1)
 
         # lee's alt version for explained var
         # matches another example online specifically for covarance matrix (near the bottom:
         #  https://towardsdatascience.com/let-us-understand-the-correlation-matrix-and-covariance-matrix-d42e6b643c22
         var_explained_unrot = eig_vals * 100 / np.sum(eig_vals)
 
-        # keep first n components that have eig_vals >= 1
-        bool_components_keep = (eig_vals >= 1.0)
+        # keep first n components that have eig_vals >= 1 if correlation matrix used
+        # bool_components_keep = (eig_vals >= 1.0)
+        # bool_components_keep = (eig_vals >= np.mean(eig_vals)) # Kaisers rule eq 12.13, page 540 of Wilks 2011
+        bool_components_keep = (var_explained_unrot >= 1.0) # keep EOF/PC pairs that explain more than 1% of underlying data
         n_components_keep = sum(bool_components_keep)
-        n_components_keep = 5
+        #n_components_keep = 5 choose to fix number of EOF and PC pairs
 
         # calculate loadings for the kept PCs
         # same loading values as if the pca package was used
         eig_vecs_keep = eig_vecs[:, :n_components_keep]
         eig_vals_keep = eig_vals[:n_components_keep]
+        perc_var_explained_unrot_keep = var_explained_unrot[:n_components_keep]
         loadings = eig_vecs[:, :n_components_keep] * np.sqrt(eig_vals[:n_components_keep]) #.shape(Xi, PCs)
+
+        # get pc scores for unrotated EOFs
+        cov_inv = pinv(cov_data, rcond=1e-55)
+        pcScoreCoeff = cov_inv.dot(loadings)
+        pcScores = data_m.dot(pcScoreCoeff) # rot_pcScores_keep
 
         # make vector directions all positive (sum of vectors > 0) for consistency.
         # As eigenvector * constant = another eigenvector, mmultiply vectors with -1 if sum() < 0.
@@ -705,41 +718,15 @@ if __name__ == '__main__':
         loadings_pd = pd.DataFrame(loadings)
         rot_loadings, rot_matrix = varimax(loadings_pd)
         rot_loadings = np.array(rot_loadings)
-        rot_loadings = flip_vector_sign(rot_loadings)
-        # Rotated eigenvalues
+        rot_loadings = flip_vector_sign(rot_loadings) # make sure ||rot_loadings|| = +ve
+        # Caculate rotated eigenvalues from rotated loadings
+        # as ||loadings_i|| = sqrt(values), ||loadings_i||^2  = values
         rot_eig_vals = np.sum(rot_loadings ** 2, axis=0)
-
-        # Weighted average (does not work) # large values, very spiky, highly correlated.
-        rot_scores = np.dot(rot_loadings.T, data_m.T) # Wilks, 2011
-        rot_scores2 = np.dot(data_m, rot_loadings)  # pca package - in base.py:  transform(self, X)
-
-        # # Get rotated PC scores (do not behave quite the same as unrotated PCs)
-        # # Transpose to get the columns being different PCs
-        # # Just doesn't seem to work...
-        # rot_pcScores = (rot_loadings.T).dot(data_m.T).T#  data_m.dot(rot_loadings) # eq 12.2 (Wilks 2011)
-        # rot_pcScores_i = rot_loadings[:,2].dot(data_m_norm.T)
-        # a=(rot_pcScores_i - np.mean(rot_pcScores_i))/np.std(rot_pcScores_i)
-        # rot_eig_vals = np.sum(rot_loadings**2, axis=0)
-        # #rot_pcScores.T / np.sqrt(rot_eig_vals)
 
         # SPSS rescaled loadings... why/how they use this?!!?! \Delta_m,R = ([diag \Sigma]^-1/2 )*\Delta_m
         #   \Delta_m = mth rotated loading; \Sigma = covariance matrix (page 409 of SPSS statistics algorithms manual)
         # Matches 'Rotated Component Matrix' Rescaled component (right table)
-        rescaled_loadings=np.vstack([(1.0/np.sqrt(np.diag(cov_data)))*rot_loadings[:,i] for i in range(rot_loadings.shape[-1])]).T
-
-        # attempt at what was in SPSS manual - doesn't work
-        #a = np.linalg.inv(rescaled_loadings.T.dot(rescaled_loadings))
-        #W=rescaled_loadings.dot(a)
-        # a = 1.0/(rot_loadings.T.dot(rot_loadings))
-        # W=rot_loadings.dot(a)
-        #a=rescaled_loadings*(1.0/(rot_eig_vals)) # tried unrotated version... normal and rescaled - also doesn't work
-
-        # # deal with ill-conditioned matrix by reducing corr a little bit
-        # # this eq. to calculate the PC scores is HIGHLY sensitive to the upper cut off used here. Too high and it is
-        # #   unstable - too low and it no longer matches the data well enough and is highly noisy.
-        # zscore_corr[zscore_corr >= 0.99] = 0.99
-        # for i in range(zscore_corr.shape[0]):
-        #     zscore_corr[i,i] = 1.0
+        # rescaled_loadings=np.vstack([(1.0/np.sqrt(np.diag(cov_data)))*rot_loadings[:,i] for i in range(rot_loadings.shape[-1])]).T
 
         # Matches 'Regression' approach in Lee (explained in Field 2005)
         # Closely matches test SPSS output on air temp; hours 11-18; height idx=12; height i = 645; using correlation matrix
@@ -750,100 +737,198 @@ if __name__ == '__main__':
         #   This matrix represents a purer measure of the \i[unique]\i relationship between pairs of variables and factors.
         #   The above aproach is the 'regression' approach using the correlation matrix is better than the weighted average.
 
-        # NOTE! probably why the normal way of just e_m^T x x' (a weighted average) doesn't work, because the relationships between the
-        #   factor and original variables are not unique! Also if the variance of some variables is far higher than others
-        #   the scores will be be unfairly calculated, as some variables will lead to large contributions
-
-        # Need to condition the correlation matrix better to calculate the score coefficients better.
-        # V is given already transposed here, as normally equation is A = U x S x V^T
-        # S is just the diagonal elements. Need to use np.diag(S) to recreate the square diagonal matrix
-        # Lee
-        df_data = pd.DataFrame(data)
-        #df_data += np.random.rand(224, 1225)*1e1 # attempt to reduce correlation slightly to help computation but limit impact on results
-        zscore = (df_data - df_data.mean() ) / df_data.std()
-        zscore_cov = np.cov(data_m_norm.T)
-        zscore_corr = np.array(zscore.corr()) # symetric matrix
-        # Pseudo-inverse (uses SVD to calculate corr_inv without a dense matrix inversion)
-        # Trial and error used to get 1e-4, output is very close to SPSS (most importantly, the peaks and trough
-        #   locations and relative magnitudes). 1e-4 and 1e-3 best..., 1e5 is ~ok low as possible but retain stability
-        # Set the limit to be so small that it isn't actually used (saftey meausre).
-        corr_inv = pinv(zscore_corr, rcond=1e-55)
-        #corr_inv = np.linalg.inv(zscore_corr) # doesn't invert the matrix well! use above SVD approach
-        pcScoreCoeff = corr_inv.dot(rot_loadings)
-        rot_pcScores=np.array(zscore).dot(pcScoreCoeff) # rot_pcScores_keep
+        # # Lee
+        # df_data = pd.DataFrame(data)
+        # #df_data += np.random.rand(224, 1225)*1e1 # attempt to reduce correlation slightly to help computation but limit impact on results
+        # zscore = (df_data - df_data.mean() ) / df_data.std()
+        # # zscore_cov = np.cov(data_m_norm.T)         zscore_cov = np.cov(data_m.T)
+        # zscore_corr = np.array(zscore.corr()) # symetric matrix
+        # # Pseudo-inverse (uses SVD to calculate corr_inv without a dense matrix inversion)
+        # # Set the limit to be so small that it isn't actually used (saftey meausre).
+        # corr_inv = pinv(zscore_corr, rcond=1e-55)
+        # #corr_inv = np.linalg.inv(zscore_corr) # doesn't invert the matrix well! use above SVD approach
+        # pcScoreCoeff = corr_inv.dot(rot_loadings)
+        # rot_pcScores=np.array(zscore).dot(pcScoreCoeff) # rot_pcScores_keep
         #plt.plot(rot_pcScores[:, 0])
 
         cov_inv = pinv(cov_data, rcond=1e-55)
         #corr_inv = np.linalg.inv(zscore_corr) # doesn't invert the matrix well! use above SVD approach
         pcScoreCoeff = cov_inv.dot(rot_loadings)
-        rot_pcScores=np.array(zscore).dot(pcScoreCoeff) # rot_pcScores_keep
+        # rot_pcScores=np.array(zscore).dot(pcScoreCoeff) # rot_pcScores_keep
+        rot_pcScores = data_m.dot(pcScoreCoeff) # rot_pcScores_keep
+        #plt.plot(rot_pcScores[:, 0]) check it looks sensible
 
-        # Order ot leading loadings may have changed, so ensure order is still the most explained variance to the least.
+        # Order of the leading loadings may have changed, so ensure order is still the most explained variance to the least.
         reordered_rot_loadings, perc_var_explained_ratio_rot, reorder_idx = \
             rotated_matrix_explained_and_reorder(rot_loadings, rot_eig_vals, eig_vals)
 
         # reorder PC scores to match loadings
         reordered_rot_pcScores = rot_pcScores[:, reorder_idx]
 
-        # check correlation between PCs should be != 0 but not really high (near -1 or 1)
-        # for i in range(rot_pcScores.shape[-1]):
-        #     r, p = pearsonr(rot_pcScores[:, 0], rot_pcScores[:, i])
+        # # check correlation between PCs should be != 0 but not really high (near -1 or 1)
+        # for i in range(reordered_rot_pcScores.shape[-1]):
+        #     r, p = pearsonr(reordered_rot_pcScores[:, 0], reordered_rot_pcScores[:, i])
         #     print 'i='+str(i)+'; r='+str(r)
-        # plt.plot(rot_pcScores[:,0])
-
-        # student-t test (upper/lower 10 percentile PC extracted and compared)
-        met_vars = mod_data.keys()
-        for none_met_var in ['longitude', 'latitude', 'level_height', 'time', data_var]:
-            if none_met_var in met_vars: met_vars.remove(none_met_var)
-
-        # approach - no need now if the SVD approach works ok.
-        # 1. count number of s elements turned to 0
-        # 1. check if correlation matrix really is symmetric (i,j/j,i =1) need a tolerance?
-        #   1.1 enforce symmetry using a tolerence
-        # 2. invert corr_matrix using SVD, then check against identity
-        # 3. check inversion diff = (I - A-1A) and (I - AA-1)
-        #   3.1 check norm of difference (sqrt.sum(squares(diag elements diff))) / (sqrt.sum(squares(diag elements corr matrix)))
+        # plt.plot(reordered_rot_pcScores[:,0])
 
         # ==============================================================================
         # Calculate and save statistics
         # ==============================================================================
 
-        t_test={}
-        met_avg={}
-        met_med={}
-        met_std={}
-        met_iqr={}
-        # extract data (10% upper and lower limits)
-        perc_limit = 10 # [%]
+        # met variables to calculate statistics with
+        met_vars = mod_data.keys()
+        print 'removing Q_H for now as it is on different height levels'
+        for none_met_var in ['longitude', 'latitude', 'level_height', 'time', 'Q_H', data_var]:
+            if none_met_var in met_vars: met_vars.remove(none_met_var)
+
+        # add height dictionary within statistics
+        statistics[height_idx_str] = {}
+
+        # keep a list of heights for plotting later
+        statistics['level_height'] = np.append(statistics['level_height'], height_i)
+        # statistics->height->EOF->met_var->stat
+        # plots to make...
+        #   bar chart... up vs lower, for each met var, for each height
+
+        # extract data (5% upper and lower limits)
+        perc_limit = 5 # [%]
+
+        # keep explained variances for unrotated and rotated EOFs
+        statistics[height_idx_str]['unrot_exp_variance'] = perc_var_explained_unrot_keep
+        statistics[height_idx_str]['rot_exp_variance'] = perc_var_explained_ratio_rot
+
+        # 1. Pearson (product moment) correlation between PCs and between EOFs
+        statistics[height_idx_str]['pcCorrMatrix'] = np.corrcoef(reordered_rot_pcScores.T)
+        statistics[height_idx_str]['loadingsCorrMatrix'] = np.corrcoef(reordered_rot_loadings.T)
+
+        # for each PC...
         for i in range(reordered_rot_pcScores.shape[-1]):
             pc_i = reordered_rot_pcScores[:, i]
             pc_i_name = 'rotPC'+str(i+1) # do not start at 0...
-            t_test[pc_i_name] = {}
+            # add dictionary for this PC
+            statistics[height_idx_str][pc_i_name] = {}
 
+            # for each meteorological variable: carry out the statistics
             for var in met_vars:
+
+                # create stats_i to store all the statistics in, and be later copied over to the full statistics dict
+                statistics_i={}
+
+                # 2.0 Data prep and extraction
                 # find upper and lower percentiles
                 up_perc = np.percentile(reordered_rot_pcScores[:,i], 100-perc_limit)
                 lower_perc = np.percentile(reordered_rot_pcScores[:, i], perc_limit)
                 # idx positions for all data above or below each percentile
-                top_scores_idx = np.where(reordered_rot_pcScores[:, i] >= up_perc)
-                lower_scores_idx = np.where(reordered_rot_pcScores[:, i] <= lower_perc)
+                top_scores_idx = np.where(reordered_rot_pcScores[:, i] >= up_perc)[0]
+                lower_scores_idx = np.where(reordered_rot_pcScores[:, i] <= lower_perc)[0]
                 #student t-test on original data
-                x = mod_data[var][top_scores_idx, :, :].flatten()
-                y = mod_data[var][lower_scores_idx, :, :].flatten()
+                if model_type == 'UKV':
+                    # top_x = mod_data[var][top_scores_idx[:,np.newaxis], :, lon_range[:,np.newaxis]].flatten()
+                    top_x = mod_data[var][top_scores_idx, :, :]
+                    top_x = top_x[:, :, lon_range].flatten()
+                    bot_y = mod_data[var][lower_scores_idx, :, :]
+                    bot_y = bot_y[:, :, lon_range].flatten()
+                else:
+                    raise ValueError('Need to define how to subsample top_x and bot_y from orig data ([scores_idx, :, :])?')
 
+                if var == 'backscatter':
+                    top_x = np.log10(top_x)
+                    bot_y = np.log10(bot_y)
+
+                # 2.1. Descriptive stats
+                statistics_i['mean_top'] = np.mean(top_x)
+                statistics_i['std_top'] = np.std(top_x)
+                statistics_i['median_top'] = np.median(top_x)
+                statistics_i['IQR_top'] = np.percentile(top_x, 75) - np.percentile(top_x, 25)
+                statistics_i['skewness_top'] = stats.skew(top_x)
+
+                statistics_i['mean_bot'] = np.mean(bot_y)
+                statistics_i['std_bot'] = np.std(bot_y)
+                statistics_i['median_bot'] = np.median(bot_y)
+                statistics_i['IQR_bot'] = np.percentile(bot_y, 75) - np.percentile(bot_y, 25)
+                statistics_i['skewness_bot'] = stats.skew(bot_y)
+
+                # 2.2. Welch's t test (parametric) equal means (do not need equal variance or sample size between distributions)
                 # equal_var=False means ttst_ind is the Welch's t-test (not student t-test)
                 #   https://en.wikipedia.org/wiki/Welch%27s_t-test
                 # This is a two-sided test for the null hypothesis that 2 independent samples have identical average (expected) values
                 #   https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ttest_ind.html
-                t_test[pc_i_name][var]=ttest_ind(x, y, equal_var=False)
-                r = []
-                p = []
-                for i in range(mod_data[var].shape[1]):
-                    for j in range(mod_data[var].shape[2]):
-                        r_i, p_i =  stats.pearsonr(mod_data[var][:,i,j], reordered_rot_pcScores[:,0])
-                        r += [r_i]
-                        p += [p_i]
+                tstat, pvalue = stats.ttest_ind(top_x, bot_y, equal_var=False)
+                statistics_i['Welchs_t'] = tstat
+                statistics_i['Welchs_p'] = pvalue
 
+                # 2.3 Mann-Whitney U test (two-sided, non-parametric) test for different distribution shapes
+                mwstat, mwpvalue = stats.mannwhitneyu(top_x, bot_y, alternative='two-sided')
+                statistics_i['Mann-Whitney-U_stat'] = mwstat
+                statistics_i['Mann-Whitney-U_p'] = mwpvalue
+
+                # 2.4 Kolmogorov-Smirnov test for goodness of fit
+                _, kspvalue_t = stats.kstest(top_x, 'norm')
+                statistics_i['kstest_top_p'] = kspvalue_t
+                _, kspvalue_b = stats.kstest(bot_y, 'norm')
+                statistics_i['kstest_bot_p'] = kspvalue_b
+
+                # 2.4 Wilcoxon signed-rank test
+                #wstat, wpvalue = stats.wilcoxon(top_x, bot_y)
+
+                # copy statistics for this var into the main statistics dictionary
+                #   use deepcopy to ensure there isn't any shallow copying
+                statistics[height_idx_str][pc_i_name][var] = deepcopy(statistics_i)
+
+                #plt.hist(top_x, color='blue', alpha=0.5, bins=50)
+                #plt.hist(bot_y, color='green', alpha=0.5, bins=50)
+
+
+        # Bar chart
+        for var in met_vars:
+            fig=plt.figure()
+
+            top_med=[]
+            bot_med=[]
+            top_iqr=[]
+            bot_iqr=[]
+            mw_p=[]
+            for i in range(reordered_rot_pcScores.shape[-1]):
+                pc_i = reordered_rot_pcScores[:, i]
+                pc_i_name = 'rotPC'+str(i+1) # do not start at 0...
+
+                # gather means
+                top_med += [statistics[height_idx_str][pc_i_name][var]['median_top']]
+                bot_med += [statistics[height_idx_str][pc_i_name][var]['median_bot']]
+
+                # gather std
+                top_iqr += [statistics[height_idx_str][pc_i_name][var]['IQR_top']]
+                bot_iqr += [statistics[height_idx_str][pc_i_name][var]['IQR_bot']]
+
+                # Welch t test
+                if statistics[height_idx_str][pc_i_name][var]['Mann-Whitney-U_p'] < 0.05:
+                    sig='*'
+                else:
+                    sig=''
+                mw_p += [sig]
+
+            # bar charts
+            x = np.arange(reordered_rot_pcScores.shape[-1])
+            width=0.3
+            plt.bar(x-(width/2), top_med, yerr=top_iqr, width=width, color='blue',align='center')
+            plt.bar(x+(width/2), bot_med, yerr=bot_iqr, width=width, color='green', align='center')
+            plt.ylabel(var)
+            plt.xlabel('PC')
+            plt.suptitle('median')
+
+            # add sample size at the top of plot for each box and whiskers
+            # pos_t = np.arange(numBoxes) + 1
+            pos = np.arange(len(x))
+            ax=plt.gca()
+            top = ax.get_ylim()[1]
+            for tick, label in zip(range(len(pos)), ax.get_xticklabels()):
+                k = tick % 2
+                # ax.text(pos[tick], top - (top * 0.08), upperLabels[tick], # not AE
+                ax.text(pos[tick], top - (top * 0.1), mw_p[tick],  # AE
+                        horizontalalignment='center', size='x-small')
+
+            savename = barsavedir + 'median_'+var+'_'+height_i_label+'_rotPCs.png'
+            plt.savefig(barsavedir + var)
 
         # ---------------------------------------------------------
         # Plotting
@@ -854,50 +939,37 @@ if __name__ == '__main__':
 
         # 1. colormesh() plot the EOFs for this height
         # unrotated
-        plot_EOFs_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
-                           days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var)
-
+        plot_spatial_output_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
+                                     days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
+                                     'EOFs')
+        # plot_EOFs_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
+        #                    days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var)
         # rotated EOFs
         plot_spatial_output_height_i(reordered_rot_loadings, ceil_metadata, lons, lats, rotEOFsavedir,
                                      days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
                                      'rotEOFs')
 
         # 2. Explain variance vs EOF number
-        #line_plot_exp_var_vs_EOF(perc_explained, height_i_label, days_iterate, expvarsavedir)
+        # unrot
+        line_plot_exp_var_vs_EOF(perc_var_explained_unrot_keep, height_i_label, days_iterate, expvarsavedir, 'EOFs')
+        # rotated
+        line_plot_exp_var_vs_EOF(perc_var_explained_ratio_rot, height_i_label, days_iterate, rotexpvarsavedir, 'rotEOFs')
 
         # 3. PC timeseries
-        #line_plot_PCs_vs_days_iterate(pc_scores, days_iterate, pcsavedir, 'PC')
-
+        # unrotated
+        line_plot_PCs_vs_days_iterate(pcScores, days_iterate, pcsavedir, 'PC')
         # rot PC
         line_plot_PCs_vs_days_iterate(reordered_rot_pcScores, days_iterate, rotPCscoresdir, 'rotPC')
 
 
 
-# ----------------------------------------------------
-# Trash code with making the eigenvectors, values, loadings and PCs
-# ----------------------------------------------------
 
-# # 2. ------ package
-# # method using a package
-# # create PCA instance
-# pca = PCA(5)
-# # # fit on data (creates covariance matrix etc, inside the package)
-# pca.fit(data)
-# # # access values and vectors
-# # var_explained_unrot = pca.explained_variance_ # variance explained by each eigenvector
-# var_explained_ratio_unrot = pca.explained_variance_ratio_
-# # perc_var_explained_ratio_unrot = pca.explained_variance_ratio_*100.0 # actual percentage explained by each principal comopnent and EOF
-# # # transform data
-# pc_scores = pca.transform(data) # PC scores (composed of vectors) # eq 12.1 Wilk 2011
-# # # reshape components back to 2D grid and plot
-# eig_vecs_pca = pca.components_.T # eigenvectors (composed of vectors)
-# # # make eigenvectors positive
-# # eig_vecs = flip_vector_sign(eig_vecs) # will have no effect if package is used
-# eig_vals_pca = pca.explained_variance_ # eigenvalues (composed of scalers)
-# # # use .T to keep the same shape as eig_vecs
-# # pca_cov = pca.get_covariance()
-# #
-# # # Note pca.get_covariance() and np.cov() give different covariance matricies! Therefore use pca func if using
-# # #   it's outputs.
-# # # no need to sort afterward, already in order with highest eig_val to lowest
-# # #    also, no need to flip signs as vectors are already in the positive directions
+    # ---------------------------------------------------------
+    # Save stats
+    # ---------------------------------------------------------
+
+    # save statistics
+    npysavedir_fullpath = npysavedir+data_var+'_'+pcsubsample+'_statistics.npy'
+    np.save(npysavedir_fullpath, statistics)
+
+    print 'END PROGRAM'
