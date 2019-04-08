@@ -383,6 +383,32 @@ def pinv(a, rcond=1e-15):
     return wrap(res)
 
 # Plotting
+def plot_corr_matrix_table(matrix, mattype, data_var, height_i_label):
+    """
+    Plot and save the data talbe for a correlation matrix
+    :param matrix:
+    :param mattype:
+    :param data_var:
+    :param height_i_label:
+    :return:
+    """
+    if mattype == 'loadingsCorrMatrix':
+        labels = ['loadings' + str(i) for i in np.arange(matrix.shape[0]) + 1]
+    elif mattype == 'pcCorrMatrix':
+        labels = ['PC' + str(i) for i in np.arange(matrix.shape[0]) + 1]
+    else:
+        raise ValueError('Labels not set: Need to define how to make the labels with current mattype')
+    plt.figure()
+    plt.table(cellText=matrix,
+              rowLabels=labels,
+              colLabels=labels,
+              loc='center')
+    plt.axis('off')
+    plt.grid('off')
+    plt.tight_layout()
+    plt.savefig(corrmatsavedir + data_var + '_' + mattype + '_' + height_i_label+'.png')
+    return
+
 def plot_EOFs_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
                        days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var):
 
@@ -528,6 +554,84 @@ def line_plot_PCs_vs_days_iterate(scores, days_iterate, pcsavedir, pctype):
 
     return
 
+
+def bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, barsavedir, height_i_label, lon_range):
+
+    # Bar chart
+    for var in met_vars:
+        fig = plt.figure()
+
+        top_med = []
+        bot_med = []
+        top_75 = []
+        top_25 = []
+        bot_75 = []
+        bot_25 = []
+        mw_p = []
+        for i in range(reordered_rot_pcScores.shape[-1]):
+            pc_i = reordered_rot_pcScores[:, i]
+            pc_i_name = 'rotPC' + str(i + 1)  # do not start at 0...
+            # stats for this iteration
+            stats_j = stats_height[pc_i_name][var]
+
+            # gather meds
+            top_med += [stats_j['median_top']]
+            bot_med += [stats_j['median_bot']]
+
+            # get values above and below median for yerr plotting
+            top_75 += [stats_j['75thpct_top'] - stats_j['median_top']]
+            top_25 += [stats_j['25thpct_top'] - stats_j['median_top']]
+            bot_75 += [stats_j['75thpct_bot'] - stats_j['median_bot']]
+            bot_25 += [stats_j['25thpct_bot'] - stats_j['median_bot']]
+
+            # top_75 += [stats_j['75thpct_top']]
+            # top_25 += [stats_j['25thpct_top']]
+            # bot_75 += [stats_j['75thpct_bot']]
+            # bot_25 += [stats_j['25thpct_bot']]
+
+            # Welch t test
+            if stats_j['Mann-Whitney-U_p'] < 0.05:
+                sig = '*'
+            else:
+                sig = ''
+            mw_p += [sig]
+
+        # bar charts
+        x = np.arange(reordered_rot_pcScores.shape[-1]) + 1  # start at PC1 not PC0...
+        width = 0.3
+        # yerr needs [value below, value above], so
+        plt.bar(x - (width / 2), top_med, yerr=np.array([-np.array(top_25), top_75]), width=width, color='blue',
+                align='center', label='top')
+        plt.bar(x + (width / 2), bot_med, yerr=np.array([-np.array(bot_25), bot_75]), width=width, color='green',
+                align='center', label='bottom')
+
+        # median and IQR
+        plt.axhline(np.median(mod_data[var][:, :, lon_range]), linestyle='--', color='black')
+        plt.axhline(np.percentile(mod_data[var][:, :, lon_range], 75), linestyle='-.', color='black', alpha=0.5)
+        plt.axhline(np.percentile(mod_data[var][:, :, lon_range], 25), linestyle='-.', color='black', alpha=0.5)
+
+        plt.ylabel(var)
+        plt.xlabel('PC')
+        plt.suptitle('median')
+        plt.legend()
+
+        # add sample size at the top of plot for each box and whiskers
+        # pos_t = np.arange(numBoxes) + 1
+        pos = np.arange(len(x)) + 1
+        ax = plt.gca()
+        top = ax.get_ylim()[1]
+        for tick, label in zip(range(len(pos)), ax.get_xticklabels()):
+            k = tick % 2
+            # ax.text(pos[tick], top - (top * 0.08), upperLabels[tick], # not AE
+            ax.text(pos[tick], top - (top * 0.1), mw_p[tick],  # AE
+                    horizontalalignment='center', size='x-small')
+
+        savename = barsavedir + 'median_' + var + '_' + height_i_label + '_rotPCs.png'
+        plt.savefig(savename)
+
+    return
+
+
 if __name__ == '__main__':
 
     # https://www.researchgate.net/profile/Jafar_Al-Badarneh/post/Does_anyboby_can_help_me_to_download_
@@ -543,8 +647,8 @@ if __name__ == '__main__':
 
     # data variable to plot
     data_var = 'backscatter'
-    # data_var = 'air_temperature'
-    # data_var = 'RH'
+    #data_var = 'air_temperature'
+    #data_var = 'RH'
 
     height_range = np.arange(0, 30) # only first set of heights
     lon_range = np.arange(30, 65) # only London area (right hand side of larger domain -35:
@@ -554,7 +658,7 @@ if __name__ == '__main__':
 
     # subsampled?
     pcsubsample = 'full'
-    # pcsubsample = '11-18_hr_range'
+    #pcsubsample = '11-18_hr_range'
 
     # ------------------
 
@@ -577,6 +681,7 @@ if __name__ == '__main__':
     expvarsavedir = savedir + 'explained_variance/'
     rotexpvarsavedir = savedir + 'rot_explained_variance/'
     barsavedir = savedir + 'barcharts/'
+    corrmatsavedir = savedir + 'corrMatrix/'
     npysavedir = datadir + 'npy/PCA/'
 
     # intial test case
@@ -607,7 +712,8 @@ if __name__ == '__main__':
     # make directory paths for the output figures
     # pcsubsampledir, then savedir needs to be checked first as they are parent dirs
     for dir_i in [pcsubsampledir, savedir,
-                  eofsavedir, pcsavedir, expvarsavedir, rotexpvarsavedir, rotEOFsavedir, rotPCscoresdir]:
+                  eofsavedir, pcsavedir, expvarsavedir, rotexpvarsavedir, rotEOFsavedir, rotPCscoresdir,
+                  barsavedir, corrmatsavedir]:
         if os.path.exists(dir_i) == False:
             os.mkdir(dir_i)
 
@@ -617,12 +723,13 @@ if __name__ == '__main__':
 
     # print data variable to screen
     print data_var
+    print pcsubsample
 
     # ceilometer list to use
     ceilsitefile = 'improveNetworksCeils.csv'
     ceil_metadata = ceil.read_ceil_metadata(datadir, ceilsitefile)
 
-    height_idx = 12
+    #height_idx = 7
 
     for height_idx in np.arange(30): # np.arange(26,30): # max 30 -> ~ 3.1km
 
@@ -645,7 +752,7 @@ if __name__ == '__main__':
         if model_type == 'UKV':
             if data_var == 'backscatter':
                 data = np.log10(mod_data[data_var][:, :, lon_range])
-            elif data_var == 'air_temperature':
+            elif (data_var == 'air_temperature') | (data_var == 'RH'):
                 data = mod_data[data_var][:, :, lon_range]
             else:
                 raise ValueError('need to specify how to extract data if not backsatter')
@@ -801,6 +908,10 @@ if __name__ == '__main__':
         statistics[height_idx_str]['pcCorrMatrix'] = np.corrcoef(reordered_rot_pcScores.T)
         statistics[height_idx_str]['loadingsCorrMatrix'] = np.corrcoef(reordered_rot_loadings.T)
 
+        # plot correlation matrix
+        plot_corr_matrix_table(statistics[height_idx_str]['pcCorrMatrix'], 'pcCorrMatrix', data_var, height_i_label)
+        plot_corr_matrix_table(statistics[height_idx_str]['loadingsCorrMatrix'], 'loadingsCorrMatrix', data_var, height_i_label)
+
         # for each PC...
         for i in range(reordered_rot_pcScores.shape[-1]):
             pc_i = reordered_rot_pcScores[:, i]
@@ -840,12 +951,16 @@ if __name__ == '__main__':
                 statistics_i['std_top'] = np.std(top_x)
                 statistics_i['median_top'] = np.median(top_x)
                 statistics_i['IQR_top'] = np.percentile(top_x, 75) - np.percentile(top_x, 25)
+                statistics_i['75thpct_top'] = np.percentile(top_x, 75)
+                statistics_i['25thpct_top'] = np.percentile(top_x, 25)
                 statistics_i['skewness_top'] = stats.skew(top_x)
 
                 statistics_i['mean_bot'] = np.mean(bot_y)
                 statistics_i['std_bot'] = np.std(bot_y)
                 statistics_i['median_bot'] = np.median(bot_y)
                 statistics_i['IQR_bot'] = np.percentile(bot_y, 75) - np.percentile(bot_y, 25)
+                statistics_i['75thpct_bot'] = np.percentile(bot_y, 75)
+                statistics_i['25thpct_bot'] = np.percentile(bot_y, 25)
                 statistics_i['skewness_bot'] = stats.skew(bot_y)
 
                 # 2.2. Welch's t test (parametric) equal means (do not need equal variance or sample size between distributions)
@@ -878,57 +993,10 @@ if __name__ == '__main__':
                 #plt.hist(top_x, color='blue', alpha=0.5, bins=50)
                 #plt.hist(bot_y, color='green', alpha=0.5, bins=50)
 
-
-        # Bar chart
-        for var in met_vars:
-            fig=plt.figure()
-
-            top_med=[]
-            bot_med=[]
-            top_iqr=[]
-            bot_iqr=[]
-            mw_p=[]
-            for i in range(reordered_rot_pcScores.shape[-1]):
-                pc_i = reordered_rot_pcScores[:, i]
-                pc_i_name = 'rotPC'+str(i+1) # do not start at 0...
-
-                # gather means
-                top_med += [statistics[height_idx_str][pc_i_name][var]['median_top']]
-                bot_med += [statistics[height_idx_str][pc_i_name][var]['median_bot']]
-
-                # gather std
-                top_iqr += [statistics[height_idx_str][pc_i_name][var]['IQR_top']]
-                bot_iqr += [statistics[height_idx_str][pc_i_name][var]['IQR_bot']]
-
-                # Welch t test
-                if statistics[height_idx_str][pc_i_name][var]['Mann-Whitney-U_p'] < 0.05:
-                    sig='*'
-                else:
-                    sig=''
-                mw_p += [sig]
-
-            # bar charts
-            x = np.arange(reordered_rot_pcScores.shape[-1])
-            width=0.3
-            plt.bar(x-(width/2), top_med, yerr=top_iqr, width=width, color='blue',align='center')
-            plt.bar(x+(width/2), bot_med, yerr=bot_iqr, width=width, color='green', align='center')
-            plt.ylabel(var)
-            plt.xlabel('PC')
-            plt.suptitle('median')
-
-            # add sample size at the top of plot for each box and whiskers
-            # pos_t = np.arange(numBoxes) + 1
-            pos = np.arange(len(x))
-            ax=plt.gca()
-            top = ax.get_ylim()[1]
-            for tick, label in zip(range(len(pos)), ax.get_xticklabels()):
-                k = tick % 2
-                # ax.text(pos[tick], top - (top * 0.08), upperLabels[tick], # not AE
-                ax.text(pos[tick], top - (top * 0.1), mw_p[tick],  # AE
-                        horizontalalignment='center', size='x-small')
-
-            savename = barsavedir + 'median_'+var+'_'+height_i_label+'_rotPCs.png'
-            plt.savefig(barsavedir + var)
+        # extract out stats for this variable for bar chart plotting
+        stats_height = statistics[height_idx_str]
+        # create bar charts - one for each var, for each height - showing all PCs
+        bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, barsavedir, height_i_label, lon_range)
 
         # ---------------------------------------------------------
         # Plotting
@@ -960,8 +1028,6 @@ if __name__ == '__main__':
         line_plot_PCs_vs_days_iterate(pcScores, days_iterate, pcsavedir, 'PC')
         # rot PC
         line_plot_PCs_vs_days_iterate(reordered_rot_pcScores, days_iterate, rotPCscoresdir, 'rotPC')
-
-
 
 
     # ---------------------------------------------------------
