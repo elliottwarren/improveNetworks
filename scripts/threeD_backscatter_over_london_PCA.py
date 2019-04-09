@@ -135,6 +135,135 @@ def flip_vector_sign(matrix):
             matrix[:, i] *= -1.0
     return matrix
 
+def pinv(a, rcond=1e-15):
+    """
+    Compute the (Moore-Penrose) pseudo-inverse of a matrix.
+
+    Calculate the generalized inverse of a matrix using its
+    singular-value decomposition (SVD) and including all
+    *large* singular values.
+
+    Parameters
+    ----------
+    a : (M, N) array_like
+      Matrix to be pseudo-inverted.
+    rcond : float
+      Cutoff for small singular values.
+      Singular values smaller (in modulus) than
+      `rcond` * largest_singular_value (again, in modulus)
+      are set to zero.
+
+    Returns
+    -------
+    B : (N, M) ndarray
+      The pseudo-inverse of `a`. If `a` is a `matrix` instance, then so
+      is `B`.
+
+    Raises
+    ------
+    LinAlgError
+      If the SVD computation does not converge.
+
+    Notes
+    -----
+    The pseudo-inverse of a matrix A, denoted :math:`A^+`, is
+    defined as: "the matrix that 'solves' [the least-squares problem]
+    :math:`Ax = b`," i.e., if :math:`\\bar{x}` is said solution, then
+    :math:`A^+` is that matrix such that :math:`\\bar{x} = A^+b`.
+
+    It can be shown that if :math:`Q_1 \\Sigma Q_2^T = A` is the singular
+    value decomposition of A, then
+    :math:`A^+ = Q_2 \\Sigma^+ Q_1^T`, where :math:`Q_{1,2}` are
+    orthogonal matrices, :math:`\\Sigma` is a diagonal matrix consisting
+    of A's so-called singular values, (followed, typically, by
+    zeros), and then :math:`\\Sigma^+` is simply the diagonal matrix
+    consisting of the reciprocals of A's singular values
+    (again, followed by zeros). [1]_
+
+    References
+    ----------
+    .. [1] G. Strang, *Linear Algebra and Its Applications*, 2nd Ed., Orlando,
+           FL, Academic Press, Inc., 1980, pp. 139-142.
+
+    Examples
+    --------
+    The following example checks that ``a * a+ * a == a`` and
+    ``a+ * a * a+ == a+``:
+
+    #>>> a = np.random.randn(9, 6)
+    #>>> B = np.linalg.pinv(a)
+    #>>> np.allclose(a, np.dot(a, np.dot(B, a)))
+    True
+    #>>> np.allclose(B, np.dot(B, np.dot(a, B)))
+    True
+
+    """
+    from numpy.linalg.linalg import _makearray, _assertNoEmpty2d, svd, maximum, dot, transpose, multiply, newaxis
+
+    a, wrap = _makearray(a)
+    _assertNoEmpty2d(a)
+    a = a.conjugate()
+    u, s, vt = svd(a, 0)
+    m = u.shape[0]
+    n = vt.shape[1]
+    #cutoff = rcond*maximum.reduce(s)
+    #count=0
+    # for i in range(min(n, m)):
+    #     if s[i] > cutoff:
+    #         s[i] = 1./s[i]
+    #     else:
+    #         s[i] = 0.
+    #         count +=1
+    for i in range(min(n, m)):
+        s[i] = 1./s[i]
+
+    res = dot(transpose(vt), multiply(s[:, newaxis], transpose(u)))
+    #print('tot s='+str(len(s))+'; count='+str(count))
+    return wrap(res)
+
+def pca_analysis(data_m, cov_data, cov_inv):
+
+    """
+    Carry out Principal Component Analysis (PCA) (no rotation here... that comes later)
+    Requires data inputs and covariance matricies to be calculated before entering the function
+    :param data_m:
+    :param cov_data:
+    :param cov_inv:
+    :return: pcScores: the new variables (time series)
+    :return loadings: here defined as -> eigenvectors * sqrt(eigenvalues)
+    """
+
+    # WHAT GETS TAKEN FORWARD
+    # U, S, V = np.linalg.svd(corr_data)
+    U, S, V = np.linalg.svd(cov_data)
+    eig_vals = S
+    eig_vecs = flip_vector_sign(V.T)  # make sure sign of each eig vec is positive, i.e. ||eig_vec_i|| = 1 (not -1)
+
+    # lee's alt version for explained var
+    # matches another example online specifically for covarance matrix (near the bottom:
+    #  https://towardsdatascience.com/let-us-understand-the-correlation-matrix-and-covariance-matrix-d42e6b643c22
+    var_explained_unrot = eig_vals * 100 / np.sum(eig_vals)
+
+    # keep first n components that have eig_vals >= 1 if correlation matrix used
+    # bool_components_keep = (eig_vals >= 1.0)
+    # bool_components_keep = (eig_vals >= np.mean(eig_vals)) # Kaisers rule eq 12.13, page 540 of Wilks 2011
+    bool_components_keep = (var_explained_unrot >= 1.0)  # keep EOF/PC pairs that explain more than 1% of underlying data
+    n_components_keep = sum(bool_components_keep)
+    # n_components_keep = 5 choose to fix number of EOF and PC pairs
+
+    # calculate loadings for the kept PCs
+    # same loading values as if the pca package was used
+    eig_vecs_keep = eig_vecs[:, :n_components_keep]
+    eig_vals_keep = eig_vals[:n_components_keep]
+    perc_var_explained_unrot_keep = var_explained_unrot[:n_components_keep]
+    loadings = eig_vecs[:, :n_components_keep] * np.sqrt(eig_vals[:n_components_keep])  # .shape(Xi, PCs)
+
+    # get pc scores for unrotated EOFs
+    pcScoreCoeff = cov_inv.dot(loadings)
+    pcScores = data_m.dot(pcScoreCoeff)  # rot_pcScores_keep
+
+    return eig_vecs_keep, eig_vals, pcScores, loadings, perc_var_explained_unrot_keep
+
 def varimax(matrix, normalize=True, max_iter=500, tolerance=1e-5, output_type='numpy.array'):
 
     """
@@ -297,91 +426,6 @@ def rotated_matrix_explained_and_reorder(rot_loadings, rot_eig_vals, eig_vals):
 
     return reordered_matrix, perc_var_explained_ratio_rot, reorder_idx
 
-def pinv(a, rcond=1e-15):
-    """
-    Compute the (Moore-Penrose) pseudo-inverse of a matrix.
-
-    Calculate the generalized inverse of a matrix using its
-    singular-value decomposition (SVD) and including all
-    *large* singular values.
-
-    Parameters
-    ----------
-    a : (M, N) array_like
-      Matrix to be pseudo-inverted.
-    rcond : float
-      Cutoff for small singular values.
-      Singular values smaller (in modulus) than
-      `rcond` * largest_singular_value (again, in modulus)
-      are set to zero.
-
-    Returns
-    -------
-    B : (N, M) ndarray
-      The pseudo-inverse of `a`. If `a` is a `matrix` instance, then so
-      is `B`.
-
-    Raises
-    ------
-    LinAlgError
-      If the SVD computation does not converge.
-
-    Notes
-    -----
-    The pseudo-inverse of a matrix A, denoted :math:`A^+`, is
-    defined as: "the matrix that 'solves' [the least-squares problem]
-    :math:`Ax = b`," i.e., if :math:`\\bar{x}` is said solution, then
-    :math:`A^+` is that matrix such that :math:`\\bar{x} = A^+b`.
-
-    It can be shown that if :math:`Q_1 \\Sigma Q_2^T = A` is the singular
-    value decomposition of A, then
-    :math:`A^+ = Q_2 \\Sigma^+ Q_1^T`, where :math:`Q_{1,2}` are
-    orthogonal matrices, :math:`\\Sigma` is a diagonal matrix consisting
-    of A's so-called singular values, (followed, typically, by
-    zeros), and then :math:`\\Sigma^+` is simply the diagonal matrix
-    consisting of the reciprocals of A's singular values
-    (again, followed by zeros). [1]_
-
-    References
-    ----------
-    .. [1] G. Strang, *Linear Algebra and Its Applications*, 2nd Ed., Orlando,
-           FL, Academic Press, Inc., 1980, pp. 139-142.
-
-    Examples
-    --------
-    The following example checks that ``a * a+ * a == a`` and
-    ``a+ * a * a+ == a+``:
-
-    #>>> a = np.random.randn(9, 6)
-    #>>> B = np.linalg.pinv(a)
-    #>>> np.allclose(a, np.dot(a, np.dot(B, a)))
-    True
-    #>>> np.allclose(B, np.dot(B, np.dot(a, B)))
-    True
-
-    """
-    from numpy.linalg.linalg import _makearray, _assertNoEmpty2d, svd, maximum, dot, transpose, multiply, newaxis
-
-    a, wrap = _makearray(a)
-    _assertNoEmpty2d(a)
-    a = a.conjugate()
-    u, s, vt = svd(a, 0)
-    m = u.shape[0]
-    n = vt.shape[1]
-    #cutoff = rcond*maximum.reduce(s)
-    #count=0
-    # for i in range(min(n, m)):
-    #     if s[i] > cutoff:
-    #         s[i] = 1./s[i]
-    #     else:
-    #         s[i] = 0.
-    #         count +=1
-    for i in range(min(n, m)):
-        s[i] = 1./s[i]
-
-    res = dot(transpose(vt), multiply(s[:, newaxis], transpose(u)))
-    #print('tot s='+str(len(s))+'; count='+str(count))
-    return wrap(res)
 
 # Plotting
 def plot_corr_matrix_table(matrix, mattype, data_var, height_i_label):
@@ -573,7 +617,7 @@ def bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, bar
             pc_i = reordered_rot_pcScores[:, i]
             pc_i_name = 'rotPC' + str(i + 1)  # do not start at 0...
             # stats for this iteration
-            stats_j = stats_height[pc_i_name][var]
+            stats_j = stats_height[var][pc_i_name]
 
             # gather meds
             top_med += [stats_j['median_top']]
@@ -640,83 +684,106 @@ def bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, bar
 
     return
 
-def boxplots_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, barsavedir, height_i_label, lon_range):
+def boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stats_height, barsavedir,
+                  height_i_label, lon_range):
 
-    # Bar chart
-    for var in met_vars:
-        fig = plt.figure()
+    """
+    Create the boxplots for each variable using pre-calculated statistics. Boxplots show the 'top' and 'bottom'
+    subsample of the original data and the significance of the Mann-Whitney-U test ** = 99%, * = 95 %.
+    :param met_vars:
+    :param mod_data:
+    :param boxplot_stats_top:
+    :param boxplot_stats_bot:
+    :param stats_height:
+    :param barsavedir:
+    :param height_i_label:
+    :param lon_range:
+    :return:
+    """
 
-        top_med = []
-        bot_med = []
-        top_75 = []
-        top_25 = []
-        bot_75 = []
-        bot_25 = []
+    def create_stats_significant_stars(boxplot_stats_bot, var, stats_height):
+
+        """
+        Use the statistics results of the Mann-Whitney-U test to create stars and show the extent to which
+        the test was significant. ** = 99% sig. * = 95%
+        :param boxplot_stats_bot:
+        :param var:
+        :param stats_height:
+        :return: mw_p (list): the stars for each test instance
+        """
+
         mw_p = []
-        for i in range(reordered_rot_pcScores.shape[-1]):
-            pc_i = reordered_rot_pcScores[:, i]
+        for i in range(len(boxplot_stats_bot[var])):
             pc_i_name = 'rotPC' + str(i + 1)  # do not start at 0...
             # stats for this iteration
-            stats_j = stats_height[pc_i_name][var]
-
-            # gather meds
-            top_med += [stats_j['median_top']]
-            bot_med += [stats_j['median_bot']]
-
-            # get values above and below median for yerr plotting
-            top_75 += [stats_j['75thpct_top'] - stats_j['median_top']]
-            top_25 += [stats_j['25thpct_top'] - stats_j['median_top']]
-            bot_75 += [stats_j['75thpct_bot'] - stats_j['median_bot']]
-            bot_25 += [stats_j['25thpct_bot'] - stats_j['median_bot']]
-
-            # top_75 += [stats_j['75thpct_top']]
-            # top_25 += [stats_j['25thpct_top']]
-            # bot_75 += [stats_j['75thpct_bot']]
-            # bot_25 += [stats_j['25thpct_bot']]
+            stats_j = stats_height[var][pc_i_name]
 
             # Welch t test
-            if stats_j['Mann-Whitney-U_p'] < 0.05:
+            if stats_j['Mann-Whitney-U_p'] < 0.01:  # 99.0 %
+                sig = '**'
+            elif stats_j['Mann-Whitney-U_p'] < 0.05:  # 95.0 %
                 sig = '*'
             else:
                 sig = ''
             mw_p += [sig]
 
-        # bar charts
-        x = np.arange(reordered_rot_pcScores.shape[-1]) + 1  # start at PC1 not PC0...
-        width = 0.3
-        # yerr needs [value below, value above], so
-        plt.bar(x - (width / 2), top_med, yerr=np.array([-np.array(top_25), top_75]), width=width, color='blue',
-                align='center', label='top')
-        plt.bar(x + (width / 2), bot_med, yerr=np.array([-np.array(bot_25), bot_75]), width=width, color='green',
-                align='center', label='bottom')
+        return mw_p
 
-        # median and IQR
-        plt.axhline(np.median(mod_data[var][:, :, lon_range]), linestyle='--', color='black')
-        plt.axhline(np.percentile(mod_data[var][:, :, lon_range], 75), linestyle='-.', color='black', alpha=0.5)
-        plt.axhline(np.percentile(mod_data[var][:, :, lon_range], 25), linestyle='-.', color='black', alpha=0.5)
+    def set_box_color(bp, color):
+        # set colour of the boxplots
+        plt.setp(bp['boxes'], color=color)
+        plt.setp(bp['whiskers'], color=color)
+        plt.setp(bp['caps'], color=color)
+        plt.setp(bp['medians'], color=color)
 
+    # boxplot for each variable
+    for var in met_vars:
+
+        # create stars to signifiy how statistically significant each test was
+        # ** = 99 %, * = 95 %, no star = not significant
+        mw_p = create_stats_significant_stars(boxplot_stats_bot, var, stats_height)
+
+        fig = plt.figure()
+        ax = plt.gca()
+        # boxplot from premade stats
+        width = 0.2
+        # posotion of boxplots.
+        # Adjust the central position of boxplots so pairs do not overlap
+        pos = np.array(range(len(boxplot_stats_top[var])))+1  # +1 so it starts with xlabel starts PC1, not PC0...
+        pos_adjust = (0.6*width)
+        # plot
+        bptop = ax.bxp(boxplot_stats_top[var], positions=pos-pos_adjust, widths=width, showfliers=False)
+        set_box_color(bptop, 'blue')
+        bpbot = ax.bxp(boxplot_stats_bot[var], positions=pos+pos_adjust, widths=width, showfliers=False)
+        set_box_color(bpbot, 'red')
+        # median and IQR of all data on this level
+        plt.axhline(np.median(mod_data[var][:, :, lon_range]), linestyle='--', linewidth=0.7, color='black', alpha=0.5)
+        if model_type == 'UKV':
+            plt.axhline(np.percentile(mod_data[var][:, :, lon_range], 75), linestyle='-.', linewidth=0.7, color='black', alpha=0.5)
+            plt.axhline(np.percentile(mod_data[var][:, :, lon_range], 25), linestyle='-.', linewidth=0.7, color='black', alpha=0.5)
+        else:
+            raise ValueError('Need to specify which lon_range (if any) to use to plot axhline for boxplot if not UKV!')
+
+        # prettify, and correct xtick label and position
+        plt.xticks(pos, pos)  # sets position and label
         plt.ylabel(var)
         plt.xlabel('PC')
         plt.suptitle('median')
-        plt.legend()
         plt.axis('tight')
 
         # add sample size at the top of plot for each box and whiskers
-        # pos_t = np.arange(numBoxes) + 1
-        pos = np.arange(len(x)) + 1
-        ax = plt.gca()
         top = ax.get_ylim()[1]
         for tick, label in zip(range(len(pos)), ax.get_xticklabels()):
             k = tick % 2
             # ax.text(pos[tick], top - (top * 0.08), upperLabels[tick], # not AE
             ax.text(pos[tick], top - (top * 0.1), mw_p[tick],  # AE
-                    horizontalalignment='center', size='x-small')
+                    horizontalalignment='center')#size='x-small'
 
         savename = barsavedir + 'median_' + var + '_' + height_i_label + '_rotPCs.png'
         plt.savefig(savename)
+        plt.close(fig)
 
     return
-
 
 
 if __name__ == '__main__':
@@ -823,7 +890,7 @@ if __name__ == '__main__':
 
     for height_idx in np.arange(30): # np.arange(26,30): # max 30 -> ~ 3.1km
 
-        # 4/6/18 seems to be missing hr 24 (hr 23 gets removed by accident as a result...) - first day in days_iterate
+        # read in model data and subsample using different **kwargs
         mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx, hr_range=[11,18])
         # mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx)
 
@@ -873,42 +940,16 @@ if __name__ == '__main__':
         data_m = data - M
         data_m_norm = data_m / np.std(data.T, axis=1)
         cov_data = np.cov(data_m.T) # comaprison shows this, rot loadings and PCs mathces SPSS ...
+        # pseduo inverse as the cov_matrix is too ill-conditioned for a normal inv.
+        cov_inv = pinv(cov_data, rcond=1e-55)
         # cov_data_normed = np.cov(data_m_norm.T)
         #corr_data = np.corrcoef(data_m.T)
-        #corr_norm_data = np.corrcoef(data_m_norm.T)
 
-        # WHAT GETS TAKEN FORWARD
-        # U, S, V = np.linalg.svd(corr_data)
-        U, S, V = np.linalg.svd(cov_data)
-        eig_vals = S
-        eig_vecs = flip_vector_sign(V.T) # make sure sign of each eig vec is positive, i.e. ||eig_vec_i|| = 1 (not -1)
-
-        # lee's alt version for explained var
-        # matches another example online specifically for covarance matrix (near the bottom:
-        #  https://towardsdatascience.com/let-us-understand-the-correlation-matrix-and-covariance-matrix-d42e6b643c22
-        var_explained_unrot = eig_vals * 100 / np.sum(eig_vals)
-
-        # keep first n components that have eig_vals >= 1 if correlation matrix used
-        # bool_components_keep = (eig_vals >= 1.0)
-        # bool_components_keep = (eig_vals >= np.mean(eig_vals)) # Kaisers rule eq 12.13, page 540 of Wilks 2011
-        bool_components_keep = (var_explained_unrot >= 1.0) # keep EOF/PC pairs that explain more than 1% of underlying data
-        n_components_keep = sum(bool_components_keep)
-        #n_components_keep = 5 choose to fix number of EOF and PC pairs
-
-        # calculate loadings for the kept PCs
-        # same loading values as if the pca package was used
-        eig_vecs_keep = eig_vecs[:, :n_components_keep]
-        eig_vals_keep = eig_vals[:n_components_keep]
-        perc_var_explained_unrot_keep = var_explained_unrot[:n_components_keep]
-        loadings = eig_vecs[:, :n_components_keep] * np.sqrt(eig_vals[:n_components_keep]) #.shape(Xi, PCs)
+        # carry out Principal Component Analaysis
+        eig_vecs_keep, eig_vals, pcScores, loadings, perc_var_explained_unrot_keep = pca_analysis(data_m, cov_data, cov_inv)
 
         # store the kept loadings, for this height for later saving, and subsequent cluster analysis in another script
         unrot_loadings_for_cluster[height_idx_str] = loadings
-
-        # get pc scores for unrotated EOFs
-        cov_inv = pinv(cov_data, rcond=1e-55)
-        pcScoreCoeff = cov_inv.dot(loadings)
-        pcScores = data_m.dot(pcScoreCoeff) # rot_pcScores_keep
 
         # make vector directions all positive (sum of vectors > 0) for consistency.
         # As eigenvector * constant = another eigenvector, mmultiply vectors with -1 if sum() < 0.
@@ -938,24 +979,18 @@ if __name__ == '__main__':
         #   The above aproach is the 'regression' approach using the correlation matrix is better than the weighted average.
 
         cov_inv = pinv(cov_data, rcond=1e-55)
-        #corr_inv = np.linalg.inv(zscore_corr) # doesn't invert the matrix well! use above SVD approach
+        # corr_inv = np.linalg.inv(zscore_corr) # doesn't invert the matrix well! use above SVD approach
         pcScoreCoeff = cov_inv.dot(rot_loadings)
-        # rot_pcScores=np.array(zscore).dot(pcScoreCoeff) # rot_pcScores_keep
-        rot_pcScores = data_m.dot(pcScoreCoeff) # rot_pcScores_keep
-        #plt.plot(rot_pcScores[:, 0]) check it looks sensible
+        rot_pcScores = data_m.dot(pcScoreCoeff)  # rot_pcScores_keep
+        # plt.plot(rot_pcScores[:, 0]) check it looks sensible
 
-        # Order of the leading loadings may have changed, so ensure order is still the most explained variance to the least.
+        # Order of the leading loadings may have changed, so ensure order is still the most explained
+        #   variance to the least.
         reordered_rot_loadings, perc_var_explained_ratio_rot, reorder_idx = \
             rotated_matrix_explained_and_reorder(rot_loadings, rot_eig_vals, eig_vals)
 
         # reorder PC scores to match loadings
         reordered_rot_pcScores = rot_pcScores[:, reorder_idx]
-
-        # # check correlation between PCs should be != 0 but not really high (near -1 or 1)
-        # for i in range(reordered_rot_pcScores.shape[-1]):
-        #     r, p = pearsonr(reordered_rot_pcScores[:, 0], reordered_rot_pcScores[:, i])
-        #     print 'i='+str(i)+'; r='+str(r)
-        # plt.plot(reordered_rot_pcScores[:,0])
 
         # ==============================================================================
         # Calculate and save statistics
@@ -995,18 +1030,23 @@ if __name__ == '__main__':
         boxplot_stats_top={}
         boxplot_stats_bot={}
 
-        # for each PC...
-        for i in range(reordered_rot_pcScores.shape[-1]):
-            pc_i = reordered_rot_pcScores[:, i]
-            pc_i_name = 'rotPC'+str(i+1) # do not start at 0...
-            # add dictionary for this PC
-            statistics[height_idx_str][pc_i_name] = {}
+        # for each meteorological variable: carry out the statistics
+        for var in met_vars:
 
-            # for each meteorological variable: carry out the statistics
-            for var in met_vars:
+            # add dictionary for this var
+            statistics[height_idx_str][var] = {}
+            boxplot_stats_top[var] = []  # list so it keeps its order (PC1, PC2...)
+            boxplot_stats_bot[var] = []
+
+            # for each PC...
+            for i in range(reordered_rot_pcScores.shape[-1]):
+                pc_i = reordered_rot_pcScores[:, i]
+                pc_i_name = 'rotPC'+str(i+1)  # do not start at 0...
+                # add dictionary for this PC
+                #statistics[height_idx_str][pc_i_name] = {}
 
                 # create stats_i to store all the statistics in, and be later copied over to the full statistics dict
-                statistics_i={}
+                statistics_i = {}
 
                 # 2.0 Data prep and extraction
                 # find upper and lower percentiles
@@ -1030,8 +1070,8 @@ if __name__ == '__main__':
                     bot_y = np.log10(bot_y)
 
                 # 2.0 get boxplot stats
-                boxplot_stats_top += cbook.boxplot_stats(top_x)
-                boxplot_stats_bot += cbook.boxplot_stats(bot_y)
+                boxplot_stats_top[var] += cbook.boxplot_stats(top_x, whis=[5,95])
+                boxplot_stats_bot[var] += cbook.boxplot_stats(bot_y, whis=[5,95])
 
                 # 2.1. Descriptive stats
                 statistics_i['mean_top'] = np.mean(top_x)
@@ -1075,15 +1115,19 @@ if __name__ == '__main__':
 
                 # copy statistics for this var into the main statistics dictionary
                 #   use deepcopy to ensure there isn't any shallow copying
-                statistics[height_idx_str][pc_i_name][var] = deepcopy(statistics_i)
+                statistics[height_idx_str][var][pc_i_name] = deepcopy(statistics_i)
 
-                #plt.hist(top_x, color='blue', alpha=0.5, bins=50)
-                #plt.hist(bot_y, color='green', alpha=0.5, bins=50)
 
         # extract out stats for this variable for bar chart plotting
         stats_height = statistics[height_idx_str]
-        # create bar charts - one for each var, for each height - showing all PCs
-        bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, barsavedir, height_i_label, lon_range)
+
+        # Create boxplots for each variable subsampled using each PC (better than the bar chart plottng below)
+        boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stats_height, barsavedir,
+                      height_i_label, lon_range)
+
+        # create bar charts - one for each var, for each height - showing all PCs - outdated and did work well
+        # for air temp or pressure
+        # bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, barsavedir, height_i_label, lon_range)
 
         # ---------------------------------------------------------
         # Plotting
@@ -1122,11 +1166,11 @@ if __name__ == '__main__':
     # ---------------------------------------------------------
 
     # save statistics
-    npysavedir_fullpath = npysavedir+data_var+'_'+pcsubsample+'_statistics.npy'
-    np.save(npysavedir_fullpath, statistics)
+    npysavedir_statistics_fullpath = npysavedir+data_var+'_'+pcsubsample+'_statistics.npy'
+    np.save(npysavedir_statistics_fullpath, statistics)
 
     # save clusters
-    npysavedir_fullpath = npysavedir + data_var + '_' + pcsubsample + '_unrotLoadings.npy'
-    np.save(npysavedir_fullpath, unrot_loadings_for_cluster)
+    npysavedir_loadings_fullpath = npysavedir + data_var + '_' + pcsubsample + '_unrotLoadings.npy'
+    np.save(npysavedir_loadings_fullpath, unrot_loadings_for_cluster)
 
     print 'END PROGRAM'
