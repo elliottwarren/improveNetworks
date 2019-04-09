@@ -15,6 +15,7 @@ import numpy as np
 #import matplotlib
 #matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.cbook as cbook
 from matplotlib.colors import LogNorm
 import matplotlib.cm as cm
 import matplotlib.colors as colors
@@ -407,6 +408,7 @@ def plot_corr_matrix_table(matrix, mattype, data_var, height_i_label):
     plt.grid('off')
     plt.tight_layout()
     plt.savefig(corrmatsavedir + data_var + '_' + mattype + '_' + height_i_label+'.png')
+    plt.close()
     return
 
 def plot_EOFs_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
@@ -554,8 +556,91 @@ def line_plot_PCs_vs_days_iterate(scores, days_iterate, pcsavedir, pctype):
 
     return
 
-
 def bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, barsavedir, height_i_label, lon_range):
+
+    # Bar chart
+    for var in met_vars:
+        fig = plt.figure()
+
+        top_med = []
+        bot_med = []
+        top_75 = []
+        top_25 = []
+        bot_75 = []
+        bot_25 = []
+        mw_p = []
+        for i in range(reordered_rot_pcScores.shape[-1]):
+            pc_i = reordered_rot_pcScores[:, i]
+            pc_i_name = 'rotPC' + str(i + 1)  # do not start at 0...
+            # stats for this iteration
+            stats_j = stats_height[pc_i_name][var]
+
+            # gather meds
+            top_med += [stats_j['median_top']]
+            bot_med += [stats_j['median_bot']]
+
+            # get values above and below median for yerr plotting
+            top_75 += [stats_j['75thpct_top'] - stats_j['median_top']]
+            top_25 += [stats_j['median_top'] - stats_j['25thpct_top']]
+            bot_75 += [stats_j['75thpct_bot'] - stats_j['median_bot']]
+            bot_25 += [stats_j['median_bot'] - stats_j['25thpct_bot']]
+
+            # top_75 += [stats_j['75thpct_top']]
+            # top_25 += [stats_j['25thpct_top']]
+            # bot_75 += [stats_j['75thpct_bot']]
+            # bot_25 += [stats_j['25thpct_bot']]
+
+            # Welch t test
+            if stats_j['Mann-Whitney-U_p'] < 0.05:
+                sig = '*'
+            else:
+                sig = ''
+            mw_p += [sig]
+
+        # bar charts
+        x = np.arange(reordered_rot_pcScores.shape[-1]) + 1  # start at PC1 not PC0...
+        width = 0.3
+        # yerr needs [value below, value above], so
+        plt.bar(x - (width / 2), top_med, yerr=np.array([np.array(top_25), top_75]), width=width, color='blue',
+                align='center', label='top')
+        plt.bar(x + (width / 2), bot_med, yerr=np.array([np.array(bot_25), bot_75]), width=width, color='green',
+                align='center', label='bottom')
+
+        # median and IQR
+        plt.axhline(np.median(mod_data[var][:, :, lon_range]), linestyle='--', color='black')
+        plt.axhline(np.percentile(mod_data[var][:, :, lon_range], 75), linestyle='-.', color='black', alpha=0.5)
+        plt.axhline(np.percentile(mod_data[var][:, :, lon_range], 25), linestyle='-.', color='black', alpha=0.5)
+
+        plt.ylabel(var)
+        plt.xlabel('PC')
+        plt.suptitle('median')
+        plt.legend()
+        ax = plt.gca()
+
+        # # bottom limit - fast version
+        # a = np.min(np.array(top_med) + np.array(top_25))
+        # b = np.min(np.array(bot_med) + np.array(bot_25))
+        # lower_lim = np.min([a,b])
+        # lower_lim = lower_lim - (lower_lim/20.0) # remove 5% of it to buffer the lower axis
+        # ax.set_ylim(bottom=lower_lim)
+
+        # add sample size at the top of plot for each box and whiskers
+        # pos_t = np.arange(numBoxes) + 1
+        pos = np.arange(len(x)) + 1
+        ax = plt.gca()
+        top = ax.get_ylim()[1]
+        for tick, label in zip(range(len(pos)), ax.get_xticklabels()):
+            k = tick % 2
+            # ax.text(pos[tick], top - (top * 0.08), upperLabels[tick], # not AE
+            ax.text(pos[tick], top - (top * 0.1), mw_p[tick],  # AE
+                    horizontalalignment='center', size='x-small')
+
+        savename = barsavedir + 'median_' + var + '_' + height_i_label + '_rotPCs.png'
+        plt.savefig(savename)
+
+    return
+
+def boxplots_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, barsavedir, height_i_label, lon_range):
 
     # Bar chart
     for var in met_vars:
@@ -614,6 +699,7 @@ def bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, bar
         plt.xlabel('PC')
         plt.suptitle('median')
         plt.legend()
+        plt.axis('tight')
 
         # add sample size at the top of plot for each box and whiskers
         # pos_t = np.arange(numBoxes) + 1
@@ -630,6 +716,7 @@ def bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, bar
         plt.savefig(savename)
 
     return
+
 
 
 if __name__ == '__main__':
@@ -657,8 +744,8 @@ if __name__ == '__main__':
     numpy_save = True
 
     # subsampled?
-    pcsubsample = 'full'
-    #pcsubsample = '11-18_hr_range'
+    #pcsubsample = 'full'
+    pcsubsample = '11-18_hr_range'
 
     # ------------------
 
@@ -704,6 +791,9 @@ if __name__ == '__main__':
     # prepare level_height array to store each level height, as they are made
     statistics = {}
     statistics['level_height'] = np.array([])
+
+    # keep unrotated PCs for cluster anaylsis in another script
+    unrot_loadings_for_cluster = {}
 
     # ==============================================================================
     # Read and process data
@@ -812,6 +902,9 @@ if __name__ == '__main__':
         perc_var_explained_unrot_keep = var_explained_unrot[:n_components_keep]
         loadings = eig_vecs[:, :n_components_keep] * np.sqrt(eig_vals[:n_components_keep]) #.shape(Xi, PCs)
 
+        # store the kept loadings, for this height for later saving, and subsequent cluster analysis in another script
+        unrot_loadings_for_cluster[height_idx_str] = loadings
+
         # get pc scores for unrotated EOFs
         cov_inv = pinv(cov_data, rcond=1e-55)
         pcScoreCoeff = cov_inv.dot(loadings)
@@ -843,20 +936,6 @@ if __name__ == '__main__':
         #   between each variable and each factor, adjusting for the original relationships between pairs of variables.
         #   This matrix represents a purer measure of the \i[unique]\i relationship between pairs of variables and factors.
         #   The above aproach is the 'regression' approach using the correlation matrix is better than the weighted average.
-
-        # # Lee
-        # df_data = pd.DataFrame(data)
-        # #df_data += np.random.rand(224, 1225)*1e1 # attempt to reduce correlation slightly to help computation but limit impact on results
-        # zscore = (df_data - df_data.mean() ) / df_data.std()
-        # # zscore_cov = np.cov(data_m_norm.T)         zscore_cov = np.cov(data_m.T)
-        # zscore_corr = np.array(zscore.corr()) # symetric matrix
-        # # Pseudo-inverse (uses SVD to calculate corr_inv without a dense matrix inversion)
-        # # Set the limit to be so small that it isn't actually used (saftey meausre).
-        # corr_inv = pinv(zscore_corr, rcond=1e-55)
-        # #corr_inv = np.linalg.inv(zscore_corr) # doesn't invert the matrix well! use above SVD approach
-        # pcScoreCoeff = corr_inv.dot(rot_loadings)
-        # rot_pcScores=np.array(zscore).dot(pcScoreCoeff) # rot_pcScores_keep
-        #plt.plot(rot_pcScores[:, 0])
 
         cov_inv = pinv(cov_data, rcond=1e-55)
         #corr_inv = np.linalg.inv(zscore_corr) # doesn't invert the matrix well! use above SVD approach
@@ -908,9 +987,13 @@ if __name__ == '__main__':
         statistics[height_idx_str]['pcCorrMatrix'] = np.corrcoef(reordered_rot_pcScores.T)
         statistics[height_idx_str]['loadingsCorrMatrix'] = np.corrcoef(reordered_rot_loadings.T)
 
-        # plot correlation matrix
+        # plot and save correlation matrix
         plot_corr_matrix_table(statistics[height_idx_str]['pcCorrMatrix'], 'pcCorrMatrix', data_var, height_i_label)
         plot_corr_matrix_table(statistics[height_idx_str]['loadingsCorrMatrix'], 'loadingsCorrMatrix', data_var, height_i_label)
+
+        # derive and store the boxplot statistics for each met. variable in boxplot_stats
+        boxplot_stats_top={}
+        boxplot_stats_bot={}
 
         # for each PC...
         for i in range(reordered_rot_pcScores.shape[-1]):
@@ -945,6 +1028,10 @@ if __name__ == '__main__':
                 if var == 'backscatter':
                     top_x = np.log10(top_x)
                     bot_y = np.log10(bot_y)
+
+                # 2.0 get boxplot stats
+                boxplot_stats_top += cbook.boxplot_stats(top_x)
+                boxplot_stats_bot += cbook.boxplot_stats(bot_y)
 
                 # 2.1. Descriptive stats
                 statistics_i['mean_top'] = np.mean(top_x)
@@ -1037,5 +1124,9 @@ if __name__ == '__main__':
     # save statistics
     npysavedir_fullpath = npysavedir+data_var+'_'+pcsubsample+'_statistics.npy'
     np.save(npysavedir_fullpath, statistics)
+
+    # save clusters
+    npysavedir_fullpath = npysavedir + data_var + '_' + pcsubsample + '_unrotLoadings.npy'
+    np.save(npysavedir_fullpath, unrot_loadings_for_cluster)
 
     print 'END PROGRAM'
