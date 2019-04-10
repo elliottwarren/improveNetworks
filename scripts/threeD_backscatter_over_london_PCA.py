@@ -16,18 +16,9 @@ import numpy as np
 #matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cbook as cbook
-from matplotlib.colors import LogNorm
-import matplotlib.cm as cm
-import matplotlib.colors as colors
 import os
-import math
 import datetime as dt
-from sklearn.decomposition import PCA
 import pandas as pd
-from scipy.stats import spearmanr
-from scipy.stats import pearsonr
-#from scipy.linalg import eigh
-#from scipy.linalg import inv
 from scipy import stats
 from copy import deepcopy
 
@@ -497,6 +488,10 @@ def plot_EOFs_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
 
     return
 
+# reordered_rot_loadings, ceil_metadata, lons, lats, rotEOFsavedir,
+#                                      days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
+#                                      'rotEOFs'
+
 def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedir,
                        days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var, matrix_type):
 
@@ -515,6 +510,7 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
             np.vstack([m_i[n:n + lat_shape] for n in np.arange(0, X_shape, lat_shape)]))  # 1225
 
         fig, ax = plt.subplots(1, 1, figsize=(4.5 * aspectRatio, 4.5))
+        #fig, ax = plt.subplots(1, 1, figsize=(4.5 * 1.0, 4.5))
         plt.pcolormesh(lons, lats, eof_i_reshape)
         plt.colorbar()
         ax.set_xlabel(r'$Longitude$')
@@ -805,7 +801,7 @@ if __name__ == '__main__':
     #data_var = 'RH'
 
     height_range = np.arange(0, 30) # only first set of heights
-    lon_range = np.arange(30, 65) # only London area (right hand side of larger domain -35:
+    lon_range = np.arange(26, 65) # only London area (right hand side of larger domain)
 
     # save?
     numpy_save = True
@@ -834,7 +830,7 @@ if __name__ == '__main__':
     pcsavedir = savedir + 'PCs/'
     expvarsavedir = savedir + 'explained_variance/'
     rotexpvarsavedir = savedir + 'rot_explained_variance/'
-    barsavedir = savedir + 'barcharts/'
+    boxsavedir = savedir + 'boxplots/'
     corrmatsavedir = savedir + 'corrMatrix/'
     npysavedir = datadir + 'npy/PCA/'
 
@@ -870,7 +866,7 @@ if __name__ == '__main__':
     # pcsubsampledir, then savedir needs to be checked first as they are parent dirs
     for dir_i in [pcsubsampledir, savedir,
                   eofsavedir, pcsavedir, expvarsavedir, rotexpvarsavedir, rotEOFsavedir, rotPCscoresdir,
-                  barsavedir, corrmatsavedir]:
+                  boxsavedir, corrmatsavedir]:
         if os.path.exists(dir_i) == False:
             os.mkdir(dir_i)
 
@@ -1011,9 +1007,6 @@ if __name__ == '__main__':
         # plots to make...
         #   bar chart... up vs lower, for each met var, for each height
 
-        # extract data (5% upper and lower limits)
-        perc_limit = 5 # [%]
-
         # keep explained variances for unrotated and rotated EOFs
         statistics[height_idx_str]['unrot_exp_variance'] = perc_var_explained_unrot_keep
         statistics[height_idx_str]['rot_exp_variance'] = perc_var_explained_ratio_rot
@@ -1029,6 +1022,9 @@ if __name__ == '__main__':
         # derive and store the boxplot statistics for each met. variable in boxplot_stats
         boxplot_stats_top={}
         boxplot_stats_bot={}
+
+        # extract data (5% upper and lower limits)
+        perc_limit = 10 # [%]
 
         # for each meteorological variable: carry out the statistics
         for var in met_vars:
@@ -1081,6 +1077,7 @@ if __name__ == '__main__':
                 statistics_i['75thpct_top'] = np.percentile(top_x, 75)
                 statistics_i['25thpct_top'] = np.percentile(top_x, 25)
                 statistics_i['skewness_top'] = stats.skew(top_x)
+                statistics_i['n_top'] = len(top_x)
 
                 statistics_i['mean_bot'] = np.mean(bot_y)
                 statistics_i['std_bot'] = np.std(bot_y)
@@ -1089,6 +1086,7 @@ if __name__ == '__main__':
                 statistics_i['75thpct_bot'] = np.percentile(bot_y, 75)
                 statistics_i['25thpct_bot'] = np.percentile(bot_y, 25)
                 statistics_i['skewness_bot'] = stats.skew(bot_y)
+                statistics_i['n_bot'] = len(bot_y)
 
                 # 2.2. Welch's t test (parametric) equal means (do not need equal variance or sample size between distributions)
                 # equal_var=False means ttst_ind is the Welch's t-test (not student t-test)
@@ -1122,7 +1120,7 @@ if __name__ == '__main__':
         stats_height = statistics[height_idx_str]
 
         # Create boxplots for each variable subsampled using each PC (better than the bar chart plottng below)
-        boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stats_height, barsavedir,
+        boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stats_height, boxsavedir,
                       height_i_label, lon_range)
 
         # create bar charts - one for each var, for each height - showing all PCs - outdated and did work well
@@ -1171,6 +1169,8 @@ if __name__ == '__main__':
 
     # save clusters
     npysavedir_loadings_fullpath = npysavedir + data_var + '_' + pcsubsample + '_unrotLoadings.npy'
-    np.save(npysavedir_loadings_fullpath, unrot_loadings_for_cluster)
+    save_dict = {'loadings': unrot_loadings_for_cluster,
+                 'longitude': lons, 'latitude': lats}
+    np.save(npysavedir_loadings_fullpath, save_dict)
 
     print 'END PROGRAM'
