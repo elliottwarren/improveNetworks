@@ -21,6 +21,7 @@ import datetime as dt
 import pandas as pd
 from scipy import stats
 from copy import deepcopy
+import sunrise
 
 import ellUtils.ellUtils as eu
 import ceilUtils.ceilUtils as ceil
@@ -71,10 +72,96 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
 
         return mod_data_day
 
+    def extract_daytime(mod_data_day, day):
+
+        """
+        Extract out data for day time (+2 after sunrise, -2 before sunset)
+        :param mod_data_day:
+        :param day:
+        :return:
+        """
+
+        # get sunrise for this day (central London)
+        s = sunrise.sun(lat=51.5, long=-0.1)
+        d_sunrise = s.sunrise(when=day)  # (hour, minute, second)
+        d_sunset = s.sunset(when=day)
+
+        # create start and end times to be 2 hours after and before sunrise and sunset respectively
+        start = day + dt.timedelta(hours=d_sunrise.hour+2, minutes=d_sunrise.minute, seconds = d_sunrise.second)
+        end = day + dt.timedelta(hours=d_sunset.hour-2, minutes=d_sunset.minute, seconds = d_sunset.second)
+
+        idx_start = eu.binary_search_nearest(mod_data_day['time'], start)
+        idx_end = eu.binary_search_nearest(mod_data_day['time'], end)
+        idx_range = np.arange(idx_start, idx_end + 1)
+
+        # extract out met variables with a time dimension
+        met_vars = mod_data_day.keys()
+        for none_met_var in ['longitude', 'latitude', 'level_height', 'time']:
+            if none_met_var in met_vars: met_vars.remove(none_met_var)
+
+        for key in met_vars:
+            mod_data_day[key] = mod_data_day[key][idx_range, ...]
+        mod_data_day['time'] = mod_data_day['time'][idx_range, ...]
+
+        return mod_data_day
+
+    def extract_nighttime(mod_data_day, day):
+
+        """
+        Extract out data for either night time (-2 before sunrise, +2 after sunset)
+        :param mod_data_day:
+        :param day:
+        :return:
+        """
+
+        # get sunrise for this day (central London)
+        s = sunrise.sun(lat=51.5, long=-0.1)
+        d_sunrise = s.sunrise(when=day)  # (hour, minute, second)
+        d_sunset = s.sunset(when=day)
+
+        # create start and end times to be 2 hours after and before sunrise and sunset respectively
+        pre_morn = day + dt.timedelta(hours=d_sunrise.hour-2, minutes=d_sunrise.minute, seconds=d_sunrise.second)
+        start_even = day + dt.timedelta(hours=d_sunset.hour+2, minutes=d_sunset.minute, seconds=d_sunset.second)
+
+        idx_morn = eu.binary_search_nearest(mod_data_day['time'], pre_morn)
+        idx_even = eu.binary_search_nearest(mod_data_day['time'], start_even)
+        # idx positions for (midnight - pre_morning) and (post_evening - following midnight), concatonated
+        #   gives the nighttime idx positions
+        idx_range = np.hstack([range(idx_morn+1), range(idx_even, len(mod_data_day['time']))])
+
+        # extract out met variables with a time dimension
+        met_vars = mod_data_day.keys()
+        for none_met_var in ['longitude', 'latitude', 'level_height', 'time']:
+            if none_met_var in met_vars: met_vars.remove(none_met_var)
+
+        for key in met_vars:
+            mod_data_day[key] = mod_data_day[key][idx_range, ...]
+        mod_data_day['time'] = mod_data_day['time'][idx_range, ...]
+
+        return mod_data_day
+
+    ## Not having much luck with this - Gradient doesn't work with unevenly spaced points (which this is)...
+    ## alternatives use interpolation
+    # if d == 0:  # take out of loop afterwards...
+    #     # get BLH from model data - simple large gradient approach in aerosol at top of BL
+    #     mod_data_day_all = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, 905, Z=Z, metvars=True)
+    #     blh_idx = np.empty((len(mod_data_day_all['latitude']), len(mod_data_day_all['longitude'])))
+    #     blh_idx[:] = np.nan
+    #     blh = np.empty((len(mod_data_day_all['latitude']), len(mod_data_day_all['longitude'])))
+    #     blh[:] = np.nan
+    #     # find the blh and height index using the minimum gradient method
+    #     for i in range(len(mod_data_day_all['latitude'])):
+    #         for j in range(len(mod_data_day_all['longitude'])):
+    #             a = np.gradient(mod_data_day_all['aerosol_for_visibility'][0, :, i, j])
+    #             blh_idx[i,j] = np.argmin(a)
+    #             blh[i,j] = mod_data_day_all['level_height'][blh_idx[i,j]]
+    ## plot a sample of aerosol profiles from the same time
+    # for i in range(len(mod_data_day_all['latitude'])):
+    #     for j in range(len(mod_data_day_all['longitude'])):
+    #         plt.plot(mod_data_day_all['aerosol_for_visibility'][10, :, i, j])
+
     # d = 0; day = days_iterate[0]
     for d, day in enumerate(days_iterate):
-
-        #print str(day)
 
         # read in all the data, across all hours and days, for one height
         mod_data_day = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, 905, Z=Z, metvars=True,
@@ -94,8 +181,17 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
                 mod_data_day[key] = mod_data_day[key][:-1, ...]
 
         # extract out a time range from data?
+        # daytime and nighttime extract fixed to +/2 hours around sunrise and sunset
         if 'hr_range' in kwargs:
             mod_data_day = extract_hour_range(mod_data_day, day, **kwargs)
+        elif 'subsample' in kwargs:
+            if kwargs['subsample'] == 'daytime':
+                mod_data_day = extract_daytime(mod_data_day, day)
+            elif kwargs['subsample'] == 'nightime':
+                mod_data_day = extract_nighttime(mod_data_day, day)
+        else:
+            if d == 0:
+                print 'Extracting data for the full day'
 
         if day == days_iterate[0]:
             mod_data = mod_data_day
@@ -103,13 +199,26 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
         else:
             # append day's data onto (mod_data) which is all the data combined
             # works if time is the first dimension in all arrays (1D, 4D or otherwise)
-            for var in met_vars:
+            for var in met_vars + ['time']:
                 mod_data[var] = np.append(mod_data[var], mod_data_day[var], axis=0)
-            # same for time
-            mod_data['time'] = np.append(mod_data['time'], mod_data_day['time'], axis=0)
+            # # same for time
+            # mod_data['time'] = np.append(mod_data['time'], mod_data_day['time'], axis=0)
 
     # get rid of the height dimension where present (only 1 height in the data)
     mod_data = {key: np.squeeze(item) for (key, item) in mod_data.items()}
+
+    # remove all instances of time where the aerosol for this height was too low (below 1 microgram kg-1)
+    # checked slicing with t_idx and lon_range at the same time works. Output array is transposed to (lon, lat) but
+    #   as a median/percentile is used from it, order of elements doesn't matter.
+    if model_type == 'UKV':
+        idx = np.array([t_idx for t_idx in range(len(mod_data['time']))
+                        if np.percentile(mod_data['aerosol_for_visibility'][t_idx, :, kwargs['lon_range']], 75) < 1.0])
+
+                        # if np.median(mod_data['aerosol_for_visibility'][t_idx, :, :]) < 1.0])
+        for key in met_vars + ['time']:
+            mod_data[key] = np.delete(mod_data[key], idx, axis=0)
+    else:
+        raise ValueError('Need to change lon_range for the (if aerosol < 1microgram) testing')
 
     print 'data read in...'
 
@@ -121,13 +230,16 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
     return mod_data
 
 def flip_vector_sign(matrix):
-    for i in range(matrix.shape[1]):
+    """If ||eig_vector|| = -1, make it +1 instead"""
+    for i in range(matrix.shape[1]):  # columnwise
         if matrix[:, i].sum() < 0:
             matrix[:, i] *= -1.0
     return matrix
 
-def pinv(a, rcond=1e-15):
+def pinv(a):
     """
+    Copied and adapted from numpy.pinv (numpy version 1.11.3)
+
     Compute the (Moore-Penrose) pseudo-inverse of a matrix.
 
     Calculate the generalized inverse of a matrix using its
@@ -138,11 +250,6 @@ def pinv(a, rcond=1e-15):
     ----------
     a : (M, N) array_like
       Matrix to be pseudo-inverted.
-    rcond : float
-      Cutoff for small singular values.
-      Singular values smaller (in modulus) than
-      `rcond` * largest_singular_value (again, in modulus)
-      are set to zero.
 
     Returns
     -------
@@ -197,19 +304,10 @@ def pinv(a, rcond=1e-15):
     u, s, vt = svd(a, 0)
     m = u.shape[0]
     n = vt.shape[1]
-    #cutoff = rcond*maximum.reduce(s)
-    #count=0
-    # for i in range(min(n, m)):
-    #     if s[i] > cutoff:
-    #         s[i] = 1./s[i]
-    #     else:
-    #         s[i] = 0.
-    #         count +=1
     for i in range(min(n, m)):
         s[i] = 1./s[i]
 
     res = dot(transpose(vt), multiply(s[:, newaxis], transpose(u)))
-    #print('tot s='+str(len(s))+'; count='+str(count))
     return wrap(res)
 
 def pca_analysis(data_m, cov_data, cov_inv):
@@ -255,7 +353,7 @@ def pca_analysis(data_m, cov_data, cov_inv):
 
     return eig_vecs_keep, eig_vals, pcScores, loadings, perc_var_explained_unrot_keep
 
-def varimax(matrix, normalize=True, max_iter=500, tolerance=1e-5, output_type='numpy.array'):
+def varimax(matrix, normalize=True, max_iter=500, tolerance=1e-5):
 
     """
     Perform varimax (orthogonal) rotation, with optional
@@ -417,6 +515,117 @@ def rotated_matrix_explained_and_reorder(rot_loadings, rot_eig_vals, eig_vals):
 
     return reordered_matrix, perc_var_explained_ratio_rot, reorder_idx
 
+# statistics
+def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars):
+
+    """
+    Calculate statistics for each variable, for each PC, for this height
+    Also calculate and export statistics for box plotting later (without needing to export the entire distribution)
+    :param reordered_rot_pcScores: used to find index positions to subsample original data
+    :param mod_data: original data
+    :param met_vars: variables to extract and calclulate statistics for
+    :return: statistics_height (dict([var][pc_i_name])): statistics for this height
+    """
+
+    # derive and store the boxplot statistics for each met. variable in boxplot_stats
+    boxplot_stats_top = {}
+    boxplot_stats_bot = {}
+    statistics_height = {}
+    # extract data (5% upper and lower limits)
+    perc_limit = 10  # [%]
+
+    # for each meteorological variable: carry out the statistics
+    for var in met_vars:
+
+        # add dictionary for this var
+        # statistics[height_idx_str][var] = {}
+        boxplot_stats_top[var] = []  # list so it keeps its order (PC1, PC2...)
+        boxplot_stats_bot[var] = []
+        statistics_height[var] = {}  # dict
+
+        # for each PC...
+        for i in range(reordered_rot_pcScores.shape[-1]):
+
+            pc_i = reordered_rot_pcScores[:, i]
+            pc_i_name = 'rotPC' + str(i + 1)  # do not start at 0...
+
+            # create stats_i to store all the statistics in, and be later copied over to the full statistics dict
+            statistics_i = {}
+
+            # 2.0 Data prep and extraction
+            # find upper and lower percentiles
+            up_perc = np.percentile(pc_i, 100 - perc_limit)
+            lower_perc = np.percentile(pc_i, perc_limit)
+            # idx positions for all data above or below each percentile
+            top_scores_idx = np.where(pc_i >= up_perc)[0]
+            lower_scores_idx = np.where(pc_i <= lower_perc)[0]
+            # student t-test on original data
+            if model_type == 'UKV':
+                # top_x = mod_data[var][top_scores_idx[:,np.newaxis], :, lon_range[:,np.newaxis]].flatten()
+                top_x = mod_data[var][top_scores_idx, :, :]
+                top_x = top_x[:, :, lon_range].flatten()
+                bot_y = mod_data[var][lower_scores_idx, :, :]
+                bot_y = bot_y[:, :, lon_range].flatten()
+            else:
+                raise ValueError('Need to define how to subsample top_x and bot_y from orig data ([scores_idx, :, :])?')
+
+            if var == 'backscatter':
+                top_x = np.log10(top_x)
+                bot_y = np.log10(bot_y)
+
+            # 2.0 get boxplot stats
+            boxplot_stats_top[var] += cbook.boxplot_stats(top_x, whis=[5, 95])
+            boxplot_stats_bot[var] += cbook.boxplot_stats(bot_y, whis=[5, 95])
+
+            # 2.1. Descriptive stats
+            statistics_i['mean_top'] = np.mean(top_x)
+            statistics_i['std_top'] = np.std(top_x)
+            statistics_i['median_top'] = np.median(top_x)
+            statistics_i['IQR_top'] = np.percentile(top_x, 75) - np.percentile(top_x, 25)
+            statistics_i['75thpct_top'] = np.percentile(top_x, 75)
+            statistics_i['25thpct_top'] = np.percentile(top_x, 25)
+            statistics_i['skewness_top'] = stats.skew(top_x)
+            statistics_i['n_top'] = len(top_x)
+
+            statistics_i['mean_bot'] = np.mean(bot_y)
+            statistics_i['std_bot'] = np.std(bot_y)
+            statistics_i['median_bot'] = np.median(bot_y)
+            statistics_i['IQR_bot'] = np.percentile(bot_y, 75) - np.percentile(bot_y, 25)
+            statistics_i['75thpct_bot'] = np.percentile(bot_y, 75)
+            statistics_i['25thpct_bot'] = np.percentile(bot_y, 25)
+            statistics_i['skewness_bot'] = stats.skew(bot_y)
+            statistics_i['n_bot'] = len(bot_y)
+
+            # 2.2. Welch's t test (parametric) equal means (do not need equal variance or sample size between distributions)
+            # equal_var=False means ttst_ind is the Welch's t-test (not student t-test)
+            #   https://en.wikipedia.org/wiki/Welch%27s_t-test
+            # This is a two-sided test for the null hypothesis that 2 independent samples have identical average (expected) values
+            #   https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ttest_ind.html
+            tstat, pvalue = stats.ttest_ind(top_x, bot_y, equal_var=False)
+            statistics_i['Welchs_t'] = tstat
+            statistics_i['Welchs_p'] = pvalue
+
+            # 2.3 Mann-Whitney U test (two-sided, non-parametric) test for different distribution shapes
+            mwstat, mwpvalue = stats.mannwhitneyu(top_x, bot_y, alternative='two-sided')
+            statistics_i['Mann-Whitney-U_stat'] = mwstat
+            statistics_i['Mann-Whitney-U_p'] = mwpvalue
+
+            # 2.4 Kolmogorov-Smirnov test for goodness of fit
+            _, kspvalue_t = stats.kstest(top_x, 'norm')
+            statistics_i['kstest_top_p'] = kspvalue_t
+            _, kspvalue_b = stats.kstest(bot_y, 'norm')
+            statistics_i['kstest_bot_p'] = kspvalue_b
+
+            # 2.4 Wilcoxon signed-rank test
+            # wstat, wpvalue = stats.wilcoxon(top_x, bot_y)
+
+            # copy statistics for this var into the main statistics dictionary
+            #   use deepcopy to ensure there isn't any shallow copying
+            # statistics[height_idx_str][var][pc_i_name] = deepcopy(statistics_i)
+
+            statistics_height[var][pc_i_name] = deepcopy(statistics_i)
+
+    return statistics_height, boxplot_stats_top, boxplot_stats_bot
 
 # Plotting
 def plot_corr_matrix_table(matrix, mattype, data_var, height_i_label):
@@ -487,10 +696,6 @@ def plot_EOFs_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
         plt.close(fig)
 
     return
-
-# reordered_rot_loadings, ceil_metadata, lons, lats, rotEOFsavedir,
-#                                      days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
-#                                      'rotEOFs'
 
 def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedir,
                        days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var, matrix_type):
@@ -764,7 +969,8 @@ def boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stat
         plt.xticks(pos, pos)  # sets position and label
         plt.ylabel(var)
         plt.xlabel('PC')
-        plt.suptitle('median')
+        # n samples equal across PCs, vars and between top and bottom distributions. Therefore just use this var rotPC1
+        plt.suptitle('median: n_per_dist='+boxplot_stats_top[var]['rotPC1']['n'])
         plt.axis('tight')
 
         # add sample size at the top of plot for each box and whiskers
@@ -808,7 +1014,8 @@ if __name__ == '__main__':
 
     # subsampled?
     #pcsubsample = 'full'
-    pcsubsample = '11-18_hr_range'
+    # pcsubsample = '11-18_hr_range'
+    pcsubsample = 'daytime'
 
     # ------------------
 
@@ -884,10 +1091,15 @@ if __name__ == '__main__':
 
     #height_idx = 7
 
-    for height_idx in np.arange(30): # np.arange(26,30): # max 30 -> ~ 3.1km
+    for height_idx in [25]: # np.arange(25): # np.arange(26,30): # max 30 -> ~ 3.1km = too high! v. low aerosol
 
         # read in model data and subsample using different **kwargs
-        mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx, hr_range=[11,18])
+        if pcsubsample == '11-18_hr_range':
+            mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx,
+                                                         lon_range=lon_range, hr_range=[11,18])
+        elif (pcsubsample == 'daytime') | (pcsubsample == 'nighttime'):
+            mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx,
+                                                         lon_range=lon_range, subsample=pcsubsample)
         # mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx)
 
         # extract out the height for this level
@@ -897,6 +1109,11 @@ if __name__ == '__main__':
 
         print 'height_idx = '+str(height_idx)
         print 'height_i = '+str(height_i)
+
+        # if sample size is too small, skip PCA and stat creation (can't remember where but 200 was deemed ~ok)
+        if mod_data['time'].shape < 200:
+            print 'skipping '+str(height_i)+' as too few samples: '+str(len(mod_data['time']))
+            continue
 
         # rotate lon and lat into normal geodetic grid (WGS84)
         lons, lats = rotate_lon_lat_2D(mod_data['longitude'][lon_range], mod_data['latitude'], model_type)
@@ -937,21 +1154,18 @@ if __name__ == '__main__':
         data_m_norm = data_m / np.std(data.T, axis=1)
         cov_data = np.cov(data_m.T) # comaprison shows this, rot loadings and PCs mathces SPSS ...
         # pseduo inverse as the cov_matrix is too ill-conditioned for a normal inv.
-        cov_inv = pinv(cov_data, rcond=1e-55)
+        cov_inv = pinv(cov_data)
         # cov_data_normed = np.cov(data_m_norm.T)
         #corr_data = np.corrcoef(data_m.T)
 
         # carry out Principal Component Analaysis
+        # loadings = eig_vecs * sqrt(eig_values)
         eig_vecs_keep, eig_vals, pcScores, loadings, perc_var_explained_unrot_keep = pca_analysis(data_m, cov_data, cov_inv)
 
         # store the kept loadings, for this height for later saving, and subsequent cluster analysis in another script
         unrot_loadings_for_cluster[height_idx_str] = loadings
 
-        # make vector directions all positive (sum of vectors > 0) for consistency.
-        # As eigenvector * constant = another eigenvector, mmultiply vectors with -1 if sum() < 0.
-
         # rotate the loadings to spread out the eplained variance between all the kept vectors
-        #loadings = np.array([eig_vecs[:, i] * np.sqrt(eig_vals[i]) for i in range(len(eig_vals))]).T # loadings
         loadings_pd = pd.DataFrame(loadings)
         rot_loadings, rot_matrix = varimax(loadings_pd)
         rot_loadings = np.array(rot_loadings)
@@ -960,21 +1174,15 @@ if __name__ == '__main__':
         # as ||loadings_i|| = sqrt(values), ||loadings_i||^2  = values
         rot_eig_vals = np.sum(rot_loadings ** 2, axis=0)
 
-        # SPSS rescaled loadings... why/how they use this?!!?! \Delta_m,R = ([diag \Sigma]^-1/2 )*\Delta_m
-        #   \Delta_m = mth rotated loading; \Sigma = covariance matrix (page 409 of SPSS statistics algorithms manual)
-        # Matches 'Rotated Component Matrix' Rescaled component (right table)
-        # rescaled_loadings=np.vstack([(1.0/np.sqrt(np.diag(cov_data)))*rot_loadings[:,i] for i in range(rot_loadings.shape[-1])]).T
-
         # Matches 'Regression' approach in Lee (explained in Field 2005)
-        # Closely matches test SPSS output on air temp; hours 11-18; height idx=12; height i = 645; using correlation matrix
-        #   shape and relative magnitudes are very close, and given we want to subsample original dataset in time correctly,
-        #   this is fine. Output is also weakly correlated, as expected.
+        # Closely matches test SPSS output on air temp; hours 11-18; height idx=12; height i = 645; using correlation
+        #   or covariance matrix. Output is weakly correlated, as expected.
         # Justification from Field (p786) The resulting factor score matrix [done this way] represents the relationship
         #   between each variable and each factor, adjusting for the original relationships between pairs of variables.
         #   This matrix represents a purer measure of the \i[unique]\i relationship between pairs of variables and factors.
         #   The above aproach is the 'regression' approach using the correlation matrix is better than the weighted average.
 
-        cov_inv = pinv(cov_data, rcond=1e-55)
+        cov_inv = pinv(cov_data)
         # corr_inv = np.linalg.inv(zscore_corr) # doesn't invert the matrix well! use above SVD approach
         pcScoreCoeff = cov_inv.dot(rot_loadings)
         rot_pcScores = data_m.dot(pcScoreCoeff)  # rot_pcScores_keep
@@ -1019,113 +1227,13 @@ if __name__ == '__main__':
         plot_corr_matrix_table(statistics[height_idx_str]['pcCorrMatrix'], 'pcCorrMatrix', data_var, height_i_label)
         plot_corr_matrix_table(statistics[height_idx_str]['loadingsCorrMatrix'], 'loadingsCorrMatrix', data_var, height_i_label)
 
-        # derive and store the boxplot statistics for each met. variable in boxplot_stats
-        boxplot_stats_top={}
-        boxplot_stats_bot={}
-
-        # extract data (5% upper and lower limits)
-        perc_limit = 10 # [%]
-
-        # for each meteorological variable: carry out the statistics
-        for var in met_vars:
-
-            # add dictionary for this var
-            statistics[height_idx_str][var] = {}
-            boxplot_stats_top[var] = []  # list so it keeps its order (PC1, PC2...)
-            boxplot_stats_bot[var] = []
-
-            # for each PC...
-            for i in range(reordered_rot_pcScores.shape[-1]):
-                pc_i = reordered_rot_pcScores[:, i]
-                pc_i_name = 'rotPC'+str(i+1)  # do not start at 0...
-                # add dictionary for this PC
-                #statistics[height_idx_str][pc_i_name] = {}
-
-                # create stats_i to store all the statistics in, and be later copied over to the full statistics dict
-                statistics_i = {}
-
-                # 2.0 Data prep and extraction
-                # find upper and lower percentiles
-                up_perc = np.percentile(reordered_rot_pcScores[:,i], 100-perc_limit)
-                lower_perc = np.percentile(reordered_rot_pcScores[:, i], perc_limit)
-                # idx positions for all data above or below each percentile
-                top_scores_idx = np.where(reordered_rot_pcScores[:, i] >= up_perc)[0]
-                lower_scores_idx = np.where(reordered_rot_pcScores[:, i] <= lower_perc)[0]
-                #student t-test on original data
-                if model_type == 'UKV':
-                    # top_x = mod_data[var][top_scores_idx[:,np.newaxis], :, lon_range[:,np.newaxis]].flatten()
-                    top_x = mod_data[var][top_scores_idx, :, :]
-                    top_x = top_x[:, :, lon_range].flatten()
-                    bot_y = mod_data[var][lower_scores_idx, :, :]
-                    bot_y = bot_y[:, :, lon_range].flatten()
-                else:
-                    raise ValueError('Need to define how to subsample top_x and bot_y from orig data ([scores_idx, :, :])?')
-
-                if var == 'backscatter':
-                    top_x = np.log10(top_x)
-                    bot_y = np.log10(bot_y)
-
-                # 2.0 get boxplot stats
-                boxplot_stats_top[var] += cbook.boxplot_stats(top_x, whis=[5,95])
-                boxplot_stats_bot[var] += cbook.boxplot_stats(bot_y, whis=[5,95])
-
-                # 2.1. Descriptive stats
-                statistics_i['mean_top'] = np.mean(top_x)
-                statistics_i['std_top'] = np.std(top_x)
-                statistics_i['median_top'] = np.median(top_x)
-                statistics_i['IQR_top'] = np.percentile(top_x, 75) - np.percentile(top_x, 25)
-                statistics_i['75thpct_top'] = np.percentile(top_x, 75)
-                statistics_i['25thpct_top'] = np.percentile(top_x, 25)
-                statistics_i['skewness_top'] = stats.skew(top_x)
-                statistics_i['n_top'] = len(top_x)
-
-                statistics_i['mean_bot'] = np.mean(bot_y)
-                statistics_i['std_bot'] = np.std(bot_y)
-                statistics_i['median_bot'] = np.median(bot_y)
-                statistics_i['IQR_bot'] = np.percentile(bot_y, 75) - np.percentile(bot_y, 25)
-                statistics_i['75thpct_bot'] = np.percentile(bot_y, 75)
-                statistics_i['25thpct_bot'] = np.percentile(bot_y, 25)
-                statistics_i['skewness_bot'] = stats.skew(bot_y)
-                statistics_i['n_bot'] = len(bot_y)
-
-                # 2.2. Welch's t test (parametric) equal means (do not need equal variance or sample size between distributions)
-                # equal_var=False means ttst_ind is the Welch's t-test (not student t-test)
-                #   https://en.wikipedia.org/wiki/Welch%27s_t-test
-                # This is a two-sided test for the null hypothesis that 2 independent samples have identical average (expected) values
-                #   https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ttest_ind.html
-                tstat, pvalue = stats.ttest_ind(top_x, bot_y, equal_var=False)
-                statistics_i['Welchs_t'] = tstat
-                statistics_i['Welchs_p'] = pvalue
-
-                # 2.3 Mann-Whitney U test (two-sided, non-parametric) test for different distribution shapes
-                mwstat, mwpvalue = stats.mannwhitneyu(top_x, bot_y, alternative='two-sided')
-                statistics_i['Mann-Whitney-U_stat'] = mwstat
-                statistics_i['Mann-Whitney-U_p'] = mwpvalue
-
-                # 2.4 Kolmogorov-Smirnov test for goodness of fit
-                _, kspvalue_t = stats.kstest(top_x, 'norm')
-                statistics_i['kstest_top_p'] = kspvalue_t
-                _, kspvalue_b = stats.kstest(bot_y, 'norm')
-                statistics_i['kstest_bot_p'] = kspvalue_b
-
-                # 2.4 Wilcoxon signed-rank test
-                #wstat, wpvalue = stats.wilcoxon(top_x, bot_y)
-
-                # copy statistics for this var into the main statistics dictionary
-                #   use deepcopy to ensure there isn't any shallow copying
-                statistics[height_idx_str][var][pc_i_name] = deepcopy(statistics_i)
-
-
-        # extract out stats for this variable for bar chart plotting
-        stats_height = statistics[height_idx_str]
-
-        # Create boxplots for each variable subsampled using each PC (better than the bar chart plottng below)
-        boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stats_height, boxsavedir,
-                      height_i_label, lon_range)
-
-        # create bar charts - one for each var, for each height - showing all PCs - outdated and did work well
-        # for air temp or pressure
-        # bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, barsavedir, height_i_label, lon_range)
+        # Calculate statistics for each var, for each PC.
+        # Includes creating a dictionary of statistics for box plotting, without needing to export the whole
+        #   distribution
+        statistics_height, boxplot_stats_top, boxplot_stats_bot = \
+            pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars)
+        # copy statistics for this height into the full statistics dicionary for all heights
+        statistics[height_idx_str] = deepcopy(statistics_height)
 
         # ---------------------------------------------------------
         # Plotting
@@ -1139,8 +1247,6 @@ if __name__ == '__main__':
         plot_spatial_output_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
                                      days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
                                      'EOFs')
-        # plot_EOFs_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
-        #                    days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var)
         # rotated EOFs
         plot_spatial_output_height_i(reordered_rot_loadings, ceil_metadata, lons, lats, rotEOFsavedir,
                                      days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
@@ -1158,6 +1264,16 @@ if __name__ == '__main__':
         # rot PC
         line_plot_PCs_vs_days_iterate(reordered_rot_pcScores, days_iterate, rotPCscoresdir, 'rotPC')
 
+        # 4. Boxplot the statistics for each var and PC combination
+        # Create boxplots for each variable subsampled using each PC (better than the bar chart plottng below)
+        stats_height = statistics[height_idx_str]
+        boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stats_height, boxsavedir,
+                      height_i_label, lon_range)
+
+        # #. Bar chart data - no longer used
+        # create bar charts - one for each var, for each height - showing all PCs - outdated and did work well
+        # for air temp or pressure
+        # bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, barsavedir, height_i_label, lon_range)
 
     # ---------------------------------------------------------
     # Save stats
