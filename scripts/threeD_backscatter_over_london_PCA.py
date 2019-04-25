@@ -140,26 +140,6 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
 
         return mod_data_day
 
-    ## Not having much luck with this - Gradient doesn't work with unevenly spaced points (which this is)...
-    ## alternatives use interpolation
-    # if d == 0:  # take out of loop afterwards...
-    #     # get BLH from model data - simple large gradient approach in aerosol at top of BL
-    #     mod_data_day_all = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, 905, Z=Z, metvars=True)
-    #     blh_idx = np.empty((len(mod_data_day_all['latitude']), len(mod_data_day_all['longitude'])))
-    #     blh_idx[:] = np.nan
-    #     blh = np.empty((len(mod_data_day_all['latitude']), len(mod_data_day_all['longitude'])))
-    #     blh[:] = np.nan
-    #     # find the blh and height index using the minimum gradient method
-    #     for i in range(len(mod_data_day_all['latitude'])):
-    #         for j in range(len(mod_data_day_all['longitude'])):
-    #             a = np.gradient(mod_data_day_all['aerosol_for_visibility'][0, :, i, j])
-    #             blh_idx[i,j] = np.argmin(a)
-    #             blh[i,j] = mod_data_day_all['level_height'][blh_idx[i,j]]
-    ## plot a sample of aerosol profiles from the same time
-    # for i in range(len(mod_data_day_all['latitude'])):
-    #     for j in range(len(mod_data_day_all['longitude'])):
-    #         plt.plot(mod_data_day_all['aerosol_for_visibility'][10, :, i, j])
-
     # d = 0; day = days_iterate[0]
     for d, day in enumerate(days_iterate):
 
@@ -207,18 +187,19 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
     # get rid of the height dimension where present (only 1 height in the data)
     mod_data = {key: np.squeeze(item) for (key, item) in mod_data.items()}
 
-    # remove all instances of time where the aerosol for this height was too low (below 1 microgram kg-1)
-    # checked slicing with t_idx and lon_range at the same time works. Output array is transposed to (lon, lat) but
-    #   as a median/percentile is used from it, order of elements doesn't matter.
-    if model_type == 'UKV':
-        idx = np.array([t_idx for t_idx in range(len(mod_data['time']))
-                        if np.percentile(mod_data['aerosol_for_visibility'][t_idx, :, kwargs['lon_range']], 75) < 1.0])
-
-                        # if np.median(mod_data['aerosol_for_visibility'][t_idx, :, :]) < 1.0])
-        for key in met_vars + ['time']:
-            mod_data[key] = np.delete(mod_data[key], idx, axis=0)
-    else:
-        raise ValueError('Need to change lon_range for the (if aerosol < 1microgram) testing')
+    ### Remove times with low aerosol (75th perc. < 1 microgram)
+    # # remove all instances of time where the aerosol for this height was too low (below 1 microgram kg-1)
+    # # checked slicing with t_idx and lon_range at the same time works. Output array is transposed to (lon, lat) but
+    # #   as a median/percentile is used from it, order of elements doesn't matter.
+    # if model_type == 'UKV':
+    #     idx = np.array([t_idx for t_idx in range(len(mod_data['time']))
+    #                     if np.percentile(mod_data['aerosol_for_visibility'][t_idx, :, kwargs['lon_range']], 75) < 1.0])
+    #
+    #                     # if np.median(mod_data['aerosol_for_visibility'][t_idx, :, :]) < 1.0])
+    #     for key in met_vars + ['time']:
+    #         mod_data[key] = np.delete(mod_data[key], idx, axis=0)
+    # else:
+    #     raise ValueError('Need to change lon_range for the (if aerosol < 1microgram) testing')
 
     print 'data read in...'
 
@@ -310,6 +291,56 @@ def pinv(a):
     res = dot(transpose(vt), multiply(s[:, newaxis], transpose(u)))
     return wrap(res)
 
+def rotated_matrix_explained_and_reorder(rot_loadings, rot_eig_vals, eig_vals):
+
+    """
+    Resort the eigenvectors in decending order as the VARIMAX rotation means the largest eigenvectors may not be first.
+    Also find % explained from each eigenvector
+
+    :param rot_loadings:
+    :param var_explained_ratio_unrot: ratio of the amount of variance explained from subsampled n UNROTATED matrix
+        vectors to the total variance across all matrix vectors.
+    :return: reordered_rot_matrix: reordered rot_matrix
+    return: reorder_idx: index for reordering the data from most explained variance, to least explained, of the rotated
+        matrix.
+    """
+
+    # calculate R2 from eq 12.4 of Wilks 2011
+    # different to below calculation using Lee. Rotated eigenvectors are scaled by sqrt(eigenvalue) (Wilks  p529, Table 12.3)
+    #    therefore loadings **2 should be new eigenvalues...
+
+    # Actual variance explained of orig dataset by each eigenvector (e.g. sum() = 79...)
+    # var_explained_rot.sum() ~= var_explained_unrot.sum() (just spread out values)
+    # shape is (loading_i, X_i) where X_i is spatial location, therefore axis to sum along is 0
+    # as ||loading|| = sqrt(eigenvalue), then below calculates that ||loading||**2 = eigenvalue
+
+    # percentage each eigenvector explains of the current set of eigenvectors (sum = 1.0)
+    # this is only a part of the orig though so each %value here will be a little too high!
+    # perc_current_rot_set = (var_explained_rot / var_explained_rot.sum())
+    # Hence, use approach below this!
+
+    # # actual percentage each eigenvector explains of the ORIGINAL total set of eigenvectors (sum != 1.0).
+    # # Same calc as above, but scale the %values DOWN based on (total var % explained in the unrotated subset
+    # #   e.g. var_explained_ratio_unrot.sum() = 0.98 of original !KEY unrotated ratio)
+    # #   i.e. if original subset had 0.98 of variance, scale these percentages down using 0.98 as the coefficient
+    # subset_total_var = var_explained_rot.sum()  # total variance in current subset
+    # remaining_ratio_var_original = var_explained_ratio_unrot.sum()  # how much of the variance is left from original e.g. 0.98
+    # var_explained_ratio_rot = (var_explained_rot / subset_total_var) * remaining_ratio_var_original
+    # perc_var_explained_ratio_rot = var_explained_ratio_rot * 100.0
+    # # var_explained_ratio_rot = (var_explained_rot / var_explained_rot.sum()) * var_explained_ratio_unrot.sum()
+
+    # fraction of total variance explained by ALL the ORIGINAL eigenvalues (matches SPSS)
+    var_explained = np.array([i / np.sum(eig_vals) for i in rot_eig_vals])
+
+    # get and apply reorder idx
+    # reorder_idx = perc_var_explained_ratio_rot.argsort()[::-1]
+    reorder_idx = var_explained.argsort()[::-1]
+
+    reordered_matrix = rot_loadings[:, reorder_idx]
+    perc_var_explained_ratio_rot = var_explained[reorder_idx] * 100.0
+
+    return reordered_matrix, perc_var_explained_ratio_rot, reorder_idx
+
 def pca_analysis(data_m, cov_data, cov_inv):
 
     """
@@ -353,167 +384,166 @@ def pca_analysis(data_m, cov_data, cov_inv):
 
     return eig_vecs_keep, eig_vals, pcScores, loadings, perc_var_explained_unrot_keep
 
-def varimax(matrix, normalize=True, max_iter=500, tolerance=1e-5):
-
+def rotate_loadings_and_calc_scores(loadings, cov_data, eig_vals):
     """
-    Perform varimax (orthogonal) rotation, with optional
-    Kaiser normalization.
-
-    Taken from Factor_analyzer, created by Jeremy Biggs (jbiggs@ets.org)
-
-    Added keyword arg (output_type) to change output to a numpy.array by default
-        (or keep as pandas.DataFrame)
-
-
-    Parameters
-    ----------
-    matrix : pd.DataFrame
-        The loadings matrix to rotate.
-    normalize : bool, optional
-        Whether to perform Kaiser normalization
-        and de-normalization prior to and following
-        rotation.
-        Defaults to True.
-    max_iter : int, optional
-        Maximum number of iterations.
-        Defaults to 500.
-    tolerance : float, optional
-        The tolerance for convergence.
-        Defaults to 1e-5.
-    output_type : bool, optional
-        return the rotated matrix as a numpy array or pandas dataframe
-        Defaults to numpy.array
-
-    Return
-    ------
-    loadings : pd.DataFrame
-        The loadings matrix
-        (n_cols, n_factors)
-    rotation_mtx : np.array
-        The rotation matrix
-        (n_factors, n_factors)
+    Rotate the loadings, calculate PC scores for the new loadings and variance explained of new rotated loadings.
+    Rotation is VARIMAX.
+    :param loadings: ordered unrotated loadings
+    :param cov_data:  covariance data matrix of mean centered data
+    :param eig_vals: eigenvalues of ALL the originally calculated, unrotated loadings
+    :return: reordered_rot_loadings: rotated, reordered loadings so first loadings explain the most variance
+    :return: reordered_rot_pcScores: rotated, reordered PC scores
+    :return: perc_var_explained_ratio_rot: percentage explained by each set of loadings.
     """
-    df = matrix.copy()
 
-    # since we're transposing the matrix
-    # later, we want to reverse the column
-    # names and index names from the original
-    # factor loading matrix at this point
-    column_names = df.index.values
-    index_names = df.columns.values
+    def varimax(matrix, normalize=True, max_iter=500, tolerance=1e-5):
 
-    n_rows, n_cols = df.shape
+        """
+        Perform varimax (orthogonal) rotation, with optional
+        Kaiser normalization.
 
-    if n_cols < 2:
-        return df
+        Taken from Factor_analyzer, created by Jeremy Biggs (jbiggs@ets.org)
 
-    X = df.values
+        Added keyword arg (output_type) to change output to a numpy.array by default
+            (or keep as pandas.DataFrame)
 
-    # normalize the loadings matrix
-    # using sqrt of the sum of squares (Kaiser)
-    if normalize:
-        normalized_mtx = df.apply(lambda x: np.sqrt(sum(x**2)),
-                                  axis=1).values
 
-        X = (X.T / normalized_mtx).T
+        Parameters
+        ----------
+        matrix : pd.DataFrame
+            The loadings matrix to rotate.
+        normalize : bool, optional
+            Whether to perform Kaiser normalization
+            and de-normalization prior to and following
+            rotation.
+            Defaults to True.
+        max_iter : int, optional
+            Maximum number of iterations.
+            Defaults to 500.
+        tolerance : float, optional
+            The tolerance for convergence.
+            Defaults to 1e-5.
+        output_type : bool, optional
+            return the rotated matrix as a numpy array or pandas dataframe
+            Defaults to numpy.array
 
-    # initialize the rotation matrix
-    # to N x N identity matrix
-    rotation_mtx = np.eye(n_cols)
+        Return
+        ------
+        loadings : pd.DataFrame
+            The loadings matrix
+            (n_cols, n_factors)
+        rotation_mtx : np.array
+            The rotation matrix
+            (n_factors, n_factors)
+        """
+        df = matrix.copy()
 
-    d = 0
-    for _ in range(max_iter):
+        # since we're transposing the matrix
+        # later, we want to reverse the column
+        # names and index names from the original
+        # factor loading matrix at this point
+        column_names = df.index.values
+        index_names = df.columns.values
 
-        old_d = d
+        n_rows, n_cols = df.shape
+
+        if n_cols < 2:
+            return df
+
+        X = df.values
+
+        # normalize the loadings matrix
+        # using sqrt of the sum of squares (Kaiser)
+        if normalize:
+            normalized_mtx = df.apply(lambda x: np.sqrt(sum(x ** 2)),
+                                      axis=1).values
+
+            X = (X.T / normalized_mtx).T
+
+        # initialize the rotation matrix
+        # to N x N identity matrix
+        rotation_mtx = np.eye(n_cols)
+
+        d = 0
+        for _ in range(max_iter):
+
+            old_d = d
+
+            # take inner product of loading matrix
+            # and rotation matrix
+            basis = np.dot(X, rotation_mtx)
+
+            # transform data for singular value decomposition
+            transformed = np.dot(X.T, basis ** 3 - (1.0 / n_rows) *
+                                 np.dot(basis, np.diag(np.diag(np.dot(basis.T, basis)))))
+
+            # perform SVD on
+            # the transformed matrix
+            U, S, V = np.linalg.svd(transformed)
+
+            # take inner product of U and V, and sum of S
+            rotation_mtx = np.dot(U, V)
+            d = np.sum(S)
+
+            # check convergence
+            if old_d != 0 and d / old_d < 1 + tolerance:
+                break
 
         # take inner product of loading matrix
         # and rotation matrix
-        basis = np.dot(X, rotation_mtx)
+        X = np.dot(X, rotation_mtx)
 
-        # transform data for singular value decomposition
-        transformed = np.dot(X.T, basis**3 - (1.0 / n_rows) *
-                             np.dot(basis, np.diag(np.diag(np.dot(basis.T, basis)))))
+        # de-normalize the data
+        if normalize:
+            X = X.T * normalized_mtx
 
-        # perform SVD on
-        # the transformed matrix
-        U, S, V = np.linalg.svd(transformed)
+        else:
+            X = X.T
 
-        # take inner product of U and V, and sum of S
-        rotation_mtx = np.dot(U, V)
-        d = np.sum(S)
+        # The rotated matrix
+        rotated_matrix = pd.DataFrame(X,
+                                      columns=column_names,
+                                      index=index_names).T
 
-        # check convergence
-        if old_d != 0 and d / old_d < 1 + tolerance:
-            break
+        return rotated_matrix, rotation_mtx
 
-    # take inner product of loading matrix
-    # and rotation matrix
-    X = np.dot(X, rotation_mtx)
+    # rotate loadings
+    loadings_pd = pd.DataFrame(loadings)
+    rot_loadings, rot_matrix = varimax(loadings_pd)
+    rot_loadings = np.array(rot_loadings)
+    rot_loadings = flip_vector_sign(rot_loadings)  # make sure ||rot_loadings|| = +ve
 
-    # de-normalize the data
-    if normalize:
-        X = X.T * normalized_mtx
+    # for i in range(a.shape[1]):  # columnwise
+    #     if a[:, i].sum() < 0:
+    #         print i
 
-    else:
-        X = X.T
+    # Caculate rotated eigenvalues from rotated loadings
+    # as ||loadings_i|| = sqrt(values), ||loadings_i||^2  = values
+    rot_eig_vals = np.sum(rot_loadings ** 2, axis=0)
 
-    # The rotated matrix
-    rotated_matrix = pd.DataFrame(X,
-                            columns=column_names,
-                            index=index_names).T
+    # Matches 'Regression' approach in Lee (explained in Field 2005)
+    # Closely matches test SPSS output on air temp; hours 11-18; height idx=12; height i = 645; using correlation
+    #   or covariance matrix. Output is weakly correlated, as expected.
+    # Justification from Field (p786) The resulting factor score matrix [done this way] represents the relationship
+    #   between each variable and each factor, adjusting for the original relationships between pairs of variables.
+    #   This matrix represents a purer measure of the \i[unique]\i relationship between pairs of variables and factors.
+    #   The above aproach is the 'regression' approach using the correlation matrix is better than the weighted average.
+    # pseudo-inverse covariance matrix as it is ill-conditioned. Use SVD approach.
+    cov_pinv = pinv(cov_data)
+    # corr_inv = np.linalg.inv(zscore_corr) # doesn't invert the matrix well! use above SVD approach
+    pcScoreCoeff = cov_pinv.dot(rot_loadings)
+    rot_pcScores = data_m.dot(pcScoreCoeff)  # rot_pcScores_keep
+    # plt.plot(rot_pcScores[:, 0]) check it looks sensible
 
-    return rotated_matrix, rotation_mtx
+    # Order of the leading loadings may have changed, so ensure order is still the most explained
+    #   variance to the least.
+    reordered_rot_loadings, perc_var_explained_ratio_rot, reorder_idx = \
+        rotated_matrix_explained_and_reorder(rot_loadings, rot_eig_vals, eig_vals)
 
-# rot_loadings, var_explained_ratio_unrot
-def rotated_matrix_explained_and_reorder(rot_loadings, rot_eig_vals, eig_vals):
+    # reorder PC scores to match loadings
+    reordered_rot_pcScores = rot_pcScores[:, reorder_idx]
 
-    """
-    Resort the eigenvectors in decending order as the VARIMAX rotation means the largest eigenvectors may not be first.
-    Also find % explained from each eigenvector
-
-    :param rot_loadings:
-    :param var_explained_ratio_unrot: ratio of the amount of variance explained from subsampled n UNROTATED matrix
-        vectors to the total variance across all matrix vectors.
-    :return: reordered_rot_matrix: reordered rot_matrix
-    return: reorder_idx: index for reordering the data from most explained variance, to least explained, of the rotated
-        matrix.
-    """
-
-    # calculate R2 from eq 12.4 of Wilks 2011
-    # different to below calculation using Lee. Rotated eigenvectors are scaled by sqrt(eigenvalue) (Wilks  p529, Table 12.3)
-    #    therefore loadings **2 should be new eigenvalues...
-
-    # Actual variance explained of orig dataset by each eigenvector (e.g. sum() = 79...)
-    # var_explained_rot.sum() ~= var_explained_unrot.sum() (just spread out values)
-    # shape is (loading_i, X_i) where X_i is spatial location, therefore axis to sum along is 0
-    # as ||loading|| = sqrt(eigenvalue), then below calculates that ||loading||**2 = eigenvalue
-
-    # percentage each eigenvector explains of the current set of eigenvectors (sum = 1.0)
-    # this is only a part of the orig though so each %value here will be a little too high!
-    # perc_current_rot_set = (var_explained_rot / var_explained_rot.sum())
-    # Hence, use approach below this!
-
-    # # actual percentage each eigenvector explains of the ORIGINAL total set of eigenvectors (sum != 1.0).
-    # # Same calc as above, but scale the %values DOWN based on (total var % explained in the unrotated subset
-    # #   e.g. var_explained_ratio_unrot.sum() = 0.98 of original !KEY unrotated ratio)
-    # #   i.e. if original subset had 0.98 of variance, scale these percentages down using 0.98 as the coefficient
-    # subset_total_var = var_explained_rot.sum()  # total variance in current subset
-    # remaining_ratio_var_original = var_explained_ratio_unrot.sum()  # how much of the variance is left from original e.g. 0.98
-    # var_explained_ratio_rot = (var_explained_rot / subset_total_var) * remaining_ratio_var_original
-    # perc_var_explained_ratio_rot = var_explained_ratio_rot * 100.0
-    # # var_explained_ratio_rot = (var_explained_rot / var_explained_rot.sum()) * var_explained_ratio_unrot.sum()
-
-    # fraction of total variance explained by ALL the ORIGINAL eigenvalues (matches SPSS)
-    var_explained = np.array([i/np.sum(eig_vals) for i in rot_eig_vals])
-
-    # get and apply reorder idx
-    # reorder_idx = perc_var_explained_ratio_rot.argsort()[::-1]
-    reorder_idx = var_explained.argsort()[::-1]
-
-    reordered_matrix = rot_loadings[:, reorder_idx]
-    perc_var_explained_ratio_rot = var_explained[reorder_idx] * 100.0
-
-    return reordered_matrix, perc_var_explained_ratio_rot, reorder_idx
+    return reordered_rot_loadings, reordered_rot_pcScores, perc_var_explained_ratio_rot
 
 # statistics
 def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars):
@@ -537,6 +567,8 @@ def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars):
     # for each meteorological variable: carry out the statistics
     for var in met_vars:
 
+        print var
+
         # add dictionary for this var
         # statistics[height_idx_str][var] = {}
         boxplot_stats_top[var] = []  # list so it keeps its order (PC1, PC2...)
@@ -559,7 +591,7 @@ def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars):
             # idx positions for all data above or below each percentile
             top_scores_idx = np.where(pc_i >= up_perc)[0]
             lower_scores_idx = np.where(pc_i <= lower_perc)[0]
-            # student t-test on original data
+            # extract out data subsample based on pc scores
             if model_type == 'UKV':
                 # top_x = mod_data[var][top_scores_idx[:,np.newaxis], :, lon_range[:,np.newaxis]].flatten()
                 top_x = mod_data[var][top_scores_idx, :, :]
@@ -567,11 +599,21 @@ def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars):
                 bot_y = mod_data[var][lower_scores_idx, :, :]
                 bot_y = bot_y[:, :, lon_range].flatten()
             else:
-                raise ValueError('Need to define how to subsample top_x and bot_y from orig data ([scores_idx, :, :])?')
+                raise ValueError('Need to define how to subsample top_x and bot_y from different model ([scores_idx, :, :])?')
 
             if var == 'backscatter':
                 top_x = np.log10(top_x)
                 bot_y = np.log10(bot_y)
+
+            # repeat array to match dimensions of original data.
+            #y = np.squeeze([[[reordered_rot_pcScores[:, i]]*35]*39]).T
+            #plt.figure() # (326L, 35L, 39L) = data.
+            #stats.pearsonr(mod_data[var][:, :, lon_range].flatten(), y.flatten())
+            #plt.scatter(mod_data[var][:, :, lon_range].flatten(), y.flatten())
+
+            plt.figure()
+            plt.hist(top_x, label='top', bins=500, alpha=0.5, color='blue')
+            plt.hist(bot_y, label='bot', bins=500, alpha=0.5, color='red')
 
             # 2.0 get boxplot stats
             boxplot_stats_top[var] += cbook.boxplot_stats(top_x, whis=[5, 95])
@@ -605,6 +647,11 @@ def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars):
             statistics_i['Welchs_t'] = tstat
             statistics_i['Welchs_p'] = pvalue
 
+            # # fast compare
+            # top_x_trim = top_x[(top_x <= np.percentile(top_x, 90)) & (top_x >= np.percentile(top_x, 10))]
+            # bot_y_trim = bot_y[(bot_y <= np.percentile(bot_y, 90)) & (bot_y >= np.percentile(bot_y, 10))]
+            # mwstat_trim, mwpvalue_trim = stats.mannwhitneyu(top_x_trim, bot_y_trim, alternative='two-sided')
+
             # 2.3 Mann-Whitney U test (two-sided, non-parametric) test for different distribution shapes
             mwstat, mwpvalue = stats.mannwhitneyu(top_x, bot_y, alternative='two-sided')
             statistics_i['Mann-Whitney-U_stat'] = mwstat
@@ -616,8 +663,10 @@ def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars):
             _, kspvalue_b = stats.kstest(bot_y, 'norm')
             statistics_i['kstest_bot_p'] = kspvalue_b
 
-            # 2.4 Wilcoxon signed-rank test
-            # wstat, wpvalue = stats.wilcoxon(top_x, bot_y)
+            # 2.4 Wilcoxon signed-rank test - comparison between two dependent samples
+            wstat, wpvalue = stats.wilcoxon(top_x, bot_y)
+            statistics_i['wilcoxon_signed_rank_w'] = wstat
+            statistics_i['wilcoxon_signed_rank_p'] = wpvalue
 
             # copy statistics for this var into the main statistics dictionary
             #   use deepcopy to ensure there isn't any shallow copying
@@ -758,7 +807,7 @@ def line_plot_exp_var_vs_EOF(perc_explained, height_i_label, days_iterate, expva
     return
 
 # reordered_rot_pcScores, days_iterate, rotPCscoresdir, 'rotPC'
-def line_plot_PCs_vs_days_iterate(scores, days_iterate, pcsavedir, pctype):
+def line_plot_PCs_vs_days_iterate(scores, days_iterate, time, pcsavedir, pctype):
 
     """Plot the EOFs paired PCs, against the days_iterate (x axis)"""
 
@@ -773,19 +822,45 @@ def line_plot_PCs_vs_days_iterate(scores, days_iterate, pcsavedir, pctype):
         #days =
         # plt.plot(pc_norm, label='PC' + str(pc_idx + 1))
 
-        # set tick locations - 1 for each day
-        step = pc_i.shape[0] / len(days_iterate)
-        ticks = np.arange(0, pc_i.shape[0], step)  # +(step/2.0) to centre the label over the day
+        # get idx for the start of each day
+        sep_days = np.array([dt.datetime(i.year, i.month, i.day) for i in time])
+        uniq_days = np.unique(sep_days)
+        idx = np.array([np.where(sep_days == i)[0][0] for i in uniq_days]) # [0][0] = first instance
 
-        # plot each day separately
-        for dplt in ticks[:-1]:
-            x_range = np.arange(dplt, dplt+step)
+
+        # # set tick locations - 1 for each day
+        # step = pc_i.shape[0] / len(days_iterate)
+        # ticks = np.arange(0, pc_i.shape[0], step)  # +(step/2.0) to centre the label over the day
+
+        # plot each day separately (varying hours so use the idx to identify which data belongs to this day.
+        for i, idx_i in enumerate(idx):
+
+            # find range for the day
+            if idx_i != idx[-1]:
+                x_range = np.arange(idx_i, idx[i+1])
+            else: # if at the end of idx, the final bit of the PC will be for this day
+                x_range  = np.arange(idx_i, len(sep_days))
+
             plt.plot(x_range, pc_i[x_range], label='PC' + str(pc_idx + 1), color='blue')
 
-        plt.xticks(ticks)
+        plt.xticks(idx)
         # get the days in a nice string format, again to plot 1 for each day
-        labels = [i.strftime('%Y/%m/%d') for i in days_iterate]
+        labels = [sep_days[i].strftime('%Y/%m/%d') for i in idx]
         ax.set_xticklabels(labels)
+
+        # # set tick locations - 1 for each day
+        # step = pc_i.shape[0] / len(days_iterate)
+        # ticks = np.arange(0, pc_i.shape[0], step)  # +(step/2.0) to centre the label over the day
+        #
+        # # plot each day separately
+        # for dplt in ticks[:-1]:
+        #     x_range = np.arange(dplt, dplt+step)
+        #     plt.plot(x_range, pc_i[x_range], label='PC' + str(pc_idx + 1), color='blue')
+        #
+        # plt.xticks(ticks)
+        # # get the days in a nice string format, again to plot 1 for each day
+        # labels = [i.strftime('%Y/%m/%d') for i in days_iterate]
+        # ax.set_xticklabels(labels)
 
         for label in ax.get_xticklabels():
             label.set_rotation(90)
@@ -919,14 +994,25 @@ def boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stat
             # stats for this iteration
             stats_j = stats_height[var][pc_i_name]
 
-            # Welch t test
-            if stats_j['Mann-Whitney-U_p'] < 0.01:  # 99.0 %
+            # Wilcoxon sined ranked test (paired)
+            if stats_j['wilcoxon_signed_rank_p'] < 0.01:  # 99.0 %
                 sig = '**'
-            elif stats_j['Mann-Whitney-U_p'] < 0.05:  # 95.0 %
+            elif stats_j['wilcoxon_signed_rank_p'] < 0.05:  # 95.0 %
                 sig = '*'
             else:
                 sig = ''
             mw_p += [sig]
+
+
+
+            # # Welch t test
+            # if stats_j['Mann-Whitney-U_p'] < 0.01:  # 99.0 %
+            #     sig = '**'
+            # elif stats_j['Mann-Whitney-U_p'] < 0.05:  # 95.0 %
+            #     sig = '*'
+            # else:
+            #     sig = ''
+            # mw_p += [sig]
 
         return mw_p
 
@@ -970,7 +1056,7 @@ def boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stat
         plt.ylabel(var)
         plt.xlabel('PC')
         # n samples equal across PCs, vars and between top and bottom distributions. Therefore just use this var rotPC1
-        plt.suptitle('median: n_per_dist='+boxplot_stats_top[var]['rotPC1']['n'])
+        plt.suptitle('median')#n_per_dist='+boxplot_stats_top[var]['rotPC1']['n_top'])
         plt.axis('tight')
 
         # add sample size at the top of plot for each box and whiskers
@@ -1005,8 +1091,8 @@ if __name__ == '__main__':
     data_var = 'backscatter'
     #data_var = 'air_temperature'
     #data_var = 'RH'
+    #data_var = 'aerosol_for_visibility'
 
-    height_range = np.arange(0, 30) # only first set of heights
     lon_range = np.arange(26, 65) # only London area (right hand side of larger domain)
 
     # save?
@@ -1014,8 +1100,9 @@ if __name__ == '__main__':
 
     # subsampled?
     #pcsubsample = 'full'
-    # pcsubsample = '11-18_hr_range'
-    pcsubsample = 'daytime'
+    #pcsubsample = '11-18_hr_range'
+    #pcsubsample = 'daytime'
+    pcsubsample = 'nightime'
 
     # ------------------
 
@@ -1091,7 +1178,7 @@ if __name__ == '__main__':
 
     #height_idx = 7
 
-    for height_idx in [25]: # np.arange(25): # np.arange(26,30): # max 30 -> ~ 3.1km = too high! v. low aerosol
+    for height_idx in np.arange(24):# [0]: #np.arange(24): # max 30 -> ~ 3.1km = too high! v. low aerosol; [8] = 325 m; [23] = 2075 m
 
         # read in model data and subsample using different **kwargs
         if pcsubsample == '11-18_hr_range':
@@ -1122,10 +1209,10 @@ if __name__ == '__main__':
         if model_type == 'UKV':
             if data_var == 'backscatter':
                 data = np.log10(mod_data[data_var][:, :, lon_range])
-            elif (data_var == 'air_temperature') | (data_var == 'RH'):
+            else:# (data_var == 'air_temperature') | (data_var == 'RH'):
                 data = mod_data[data_var][:, :, lon_range]
-            else:
-                raise ValueError('need to specify how to extract data if not backsatter')
+            #else:
+            #    raise ValueError('need to specify how to extract data if not backsatter')
         else:
             raise ValueError('Need to change the data extract to deal with other models than UKV, not([:, :, long_range])!')
 
@@ -1165,36 +1252,16 @@ if __name__ == '__main__':
         # store the kept loadings, for this height for later saving, and subsequent cluster analysis in another script
         unrot_loadings_for_cluster[height_idx_str] = loadings
 
-        # rotate the loadings to spread out the eplained variance between all the kept vectors
-        loadings_pd = pd.DataFrame(loadings)
-        rot_loadings, rot_matrix = varimax(loadings_pd)
-        rot_loadings = np.array(rot_loadings)
-        rot_loadings = flip_vector_sign(rot_loadings) # make sure ||rot_loadings|| = +ve
-        # Caculate rotated eigenvalues from rotated loadings
-        # as ||loadings_i|| = sqrt(values), ||loadings_i||^2  = values
-        rot_eig_vals = np.sum(rot_loadings ** 2, axis=0)
-
-        # Matches 'Regression' approach in Lee (explained in Field 2005)
-        # Closely matches test SPSS output on air temp; hours 11-18; height idx=12; height i = 645; using correlation
-        #   or covariance matrix. Output is weakly correlated, as expected.
-        # Justification from Field (p786) The resulting factor score matrix [done this way] represents the relationship
-        #   between each variable and each factor, adjusting for the original relationships between pairs of variables.
-        #   This matrix represents a purer measure of the \i[unique]\i relationship between pairs of variables and factors.
-        #   The above aproach is the 'regression' approach using the correlation matrix is better than the weighted average.
-
-        cov_inv = pinv(cov_data)
-        # corr_inv = np.linalg.inv(zscore_corr) # doesn't invert the matrix well! use above SVD approach
-        pcScoreCoeff = cov_inv.dot(rot_loadings)
-        rot_pcScores = data_m.dot(pcScoreCoeff)  # rot_pcScores_keep
-        # plt.plot(rot_pcScores[:, 0]) check it looks sensible
-
-        # Order of the leading loadings may have changed, so ensure order is still the most explained
-        #   variance to the least.
-        reordered_rot_loadings, perc_var_explained_ratio_rot, reorder_idx = \
-            rotated_matrix_explained_and_reorder(rot_loadings, rot_eig_vals, eig_vals)
-
-        # reorder PC scores to match loadings
-        reordered_rot_pcScores = rot_pcScores[:, reorder_idx]
+        # If there is more than 1 set of EOFs, PCs and loadings - VARIMAX rotate
+        # Else, set the 'rotated' component equal to the unrotated component.
+        if loadings.shape[-1] > 1:
+            # rotate the loadings to spread out the eplained variance between all the kept vectors
+            reordered_rot_loadings, reordered_rot_pcScores, perc_var_explained_ratio_rot = \
+                rotate_loadings_and_calc_scores(loadings, cov_data, eig_vals)
+        else:
+            reordered_rot_loadings = loadings
+            reordered_rot_pcScores = pcScores
+            perc_var_explained_ratio_rot = perc_var_explained_unrot_keep
 
         # ==============================================================================
         # Calculate and save statistics
@@ -1219,13 +1286,14 @@ if __name__ == '__main__':
         statistics[height_idx_str]['unrot_exp_variance'] = perc_var_explained_unrot_keep
         statistics[height_idx_str]['rot_exp_variance'] = perc_var_explained_ratio_rot
 
-        # 1. Pearson (product moment) correlation between PCs and between EOFs
-        statistics[height_idx_str]['pcCorrMatrix'] = np.corrcoef(reordered_rot_pcScores.T)
-        statistics[height_idx_str]['loadingsCorrMatrix'] = np.corrcoef(reordered_rot_loadings.T)
+        # Pearson (product moment) correlation between PCs and between EOFs
+        if loadings.shape[-1] > 1:
+            statistics[height_idx_str]['pcCorrMatrix'] = np.corrcoef(reordered_rot_pcScores.T)
+            statistics[height_idx_str]['loadingsCorrMatrix'] = np.corrcoef(reordered_rot_loadings.T)
 
-        # plot and save correlation matrix
-        plot_corr_matrix_table(statistics[height_idx_str]['pcCorrMatrix'], 'pcCorrMatrix', data_var, height_i_label)
-        plot_corr_matrix_table(statistics[height_idx_str]['loadingsCorrMatrix'], 'loadingsCorrMatrix', data_var, height_i_label)
+            # plot and save correlation matrix
+            plot_corr_matrix_table(statistics[height_idx_str]['pcCorrMatrix'], 'pcCorrMatrix', data_var, height_i_label)
+            plot_corr_matrix_table(statistics[height_idx_str]['loadingsCorrMatrix'], 'loadingsCorrMatrix', data_var, height_i_label)
 
         # Calculate statistics for each var, for each PC.
         # Includes creating a dictionary of statistics for box plotting, without needing to export the whole
@@ -1260,9 +1328,9 @@ if __name__ == '__main__':
 
         # 3. PC timeseries
         # unrotated
-        line_plot_PCs_vs_days_iterate(pcScores, days_iterate, pcsavedir, 'PC')
+        line_plot_PCs_vs_days_iterate(pcScores, days_iterate, mod_data['time'], pcsavedir, 'PC')
         # rot PC
-        line_plot_PCs_vs_days_iterate(reordered_rot_pcScores, days_iterate, rotPCscoresdir, 'rotPC')
+        line_plot_PCs_vs_days_iterate(reordered_rot_pcScores, days_iterate, mod_data['time'], rotPCscoresdir, 'rotPC')
 
         # 4. Boxplot the statistics for each var and PC combination
         # Create boxplots for each variable subsampled using each PC (better than the bar chart plottng below)
