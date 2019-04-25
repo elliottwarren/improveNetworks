@@ -6,8 +6,8 @@ Created by Elliott Warren Fri 23 Nov 2018
 """
 
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')
+#import matplotlib
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import matplotlib.cm as cm
@@ -191,7 +191,7 @@ if __name__ == '__main__':
 
     # # test case from unused paper 2 UKV data
     # daystr = ['20180903']
-    # current set (missing 20180215 and 20181101)
+    # current set (missing 20180215 and 20181101) ## start again at 15-05-2018
     daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
               '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
               '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
@@ -224,6 +224,12 @@ if __name__ == '__main__':
 
         # rotate the lon and lats onto a normal geodetic grid (WGS84)
         lons, lats = rotate_lon_lat_2D(mod_data['longitude'][lon_range], mod_data['latitude'], model_type)
+
+        # extract out met variables with a time dimension
+        met_vars = mod_data.keys()
+        for none_met_var in ['longitude', 'latitude', 'level_height', 'time', 'Q_H']:
+            if none_met_var in met_vars:
+                met_vars.remove(none_met_var)
 
         # ==============================================================================
         # Plotting
@@ -270,8 +276,8 @@ if __name__ == '__main__':
                 # plot each ceilometer location
                 for site, loc in ceil_metadata.iteritems():
                     # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
-                    plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
-                    plt.annotate(site, (loc[0], loc[1]))
+                    ax.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
+                    ax.annotate(site, (loc[0], loc[1]))
 
                 ax.set_xlabel(r'$Longitude$')
                 ax.set_ylabel(r'$Latitude$')
