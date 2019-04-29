@@ -6,8 +6,8 @@ Created by Elliott Warren Fri 23 Nov 2018
 """
 
 import numpy as np
-#import matplotlib
-#matplotlib.use('Agg')
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import matplotlib.cm as cm
@@ -172,7 +172,6 @@ if __name__ == '__main__':
 
     # save?
     numpy_save = True
-    data_var = 'backscatter'
 
     # ------------------
 
@@ -186,11 +185,10 @@ if __name__ == '__main__':
     datadir = maindir + 'data/'
     modDatadir = datadir + model_type + '/'
     savedir = maindir + 'figures/model_runs/cross_sections/'
-    crosssavedir = savedir + data_var + '/'
     npysavedir = datadir + 'npy/'
 
     # # test case from unused paper 2 UKV data
-    # daystr = ['20180903']
+    # daystr = ['20180903']`
     # current set (missing 20180215 and 20181101) ## start again at 15-05-2018
     daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
               '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
@@ -198,12 +196,6 @@ if __name__ == '__main__':
               '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
     days_iterate = eu.dateList_to_datetime(daystr)
     #[i.strftime('%Y%j') for i in days_iterate]
-
-    # make directory paths for the output figures
-    # pcsubsampledir, then savedir needs to be checked first as they are parent dirs
-    for dir_i in [crosssavedir]:
-        if os.path.exists(dir_i) == False:
-            os.mkdir(dir_i)
 
     # ==============================================================================
     # Read and process data
@@ -218,8 +210,6 @@ if __name__ == '__main__':
         print 'day = ' + day.strftime('%Y-%m-%d')
 
         # calculate the 3D backscatter field across London
-        # mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, res, 905, allvars=True)
-
         mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, 905, metvars=True)
 
         # rotate the lon and lats onto a normal geodetic grid (WGS84)
@@ -241,57 +231,71 @@ if __name__ == '__main__':
         else:
             aspectRatio = float(mod_data['latitude'].shape[0]) / float(mod_data['longitude'].shape[0])
 
-        # fast plot - need to convert lon and lats from centre points to corners for pcolormesh()
-        for height_idx, height_i in enumerate(mod_data['level_height'][:25]):
+        # each variable in the dataset
+        for var in met_vars:
 
-            # plotting limits for this height
-            # Extract is transposed when indexed like this but
-            vmin = np.percentile(mod_data[data_var][:, height_idx, :, lon_range], 2)
-            vmax = np.percentile(mod_data[data_var][:, height_idx, :, lon_range], 98)
+            print 'working on ' + var + '...'
 
-            for hr_idx, hr in enumerate(mod_data['time'][:-1]):  # miss out midnight of the next day...
-                #fig, ax = plt.subplots(1, 1, figsize=(6.0*aspectRatio, 6.0))
-                fig = plt.figure(figsize=(6.5, 3.5))
-                ax = fig.add_subplot(111, aspect=aspectRatio)
-                # fig, ax = plt.subplots(1, 1, figsize=(3*aspectRatio, 4.5))
+            # make directory paths for the output figures
+            # pcsubsampledir, then savedir needs to be checked first as they are parent dirs
+            crosssavedir = savedir + var + '/'
+            if os.path.exists(crosssavedir) == False:
+                os.mkdir(crosssavedir)
 
-                data = mod_data[data_var][hr_idx, height_idx, :, :]
-                # subsample further if UKV, to trim off some of the domain
-                if model_type == 'UKV':
-                    data = data[:, lon_range]
+            # fast plot - need to convert lon and lats from centre points to corners for pcolormesh()
+            for height_idx, height_i in enumerate(mod_data['level_height'][:25]):
 
-                # fixed colourbar
-                # mesh = plt.pcolormesh(lons, lats, mod_data['bsc_attenuated'][hr_idx, height_idx, :, :],
-                #                       norm=LogNorm(), cmap=cm.get_cmap('jet'))
+                # plotting limits for this height
+                # Extract is transposed when indexed like this but
+                vmin = np.percentile(mod_data[var][:, height_idx, :, lon_range], 2)
+                vmax = np.percentile(mod_data[var][:, height_idx, :, lon_range], 98)
 
-                mesh = ax.pcolormesh(lons, lats, data, vmin=vmin, vmax=vmax,
-                                      norm=LogNorm(), cmap=cm.get_cmap('jet'))
-                ax.set_aspect(aspectRatio)
+                for hr_idx, hr in enumerate(mod_data['time'][:-1]):  # miss out midnight of the next day...
+                    #fig, ax = plt.subplots(1, 1, figsize=(6.0*aspectRatio, 6.0))
+                    fig = plt.figure(figsize=(6.5, 3.5))
+                    ax = fig.add_subplot(111, aspect=aspectRatio)
+                    # fig, ax = plt.subplots(1, 1, figsize=(3*aspectRatio, 4.5))
 
-                the_divider = make_axes_locatable(ax)
-                color_axis = the_divider.append_axes("right", size="5%", pad=0.1)
-                cbar = plt.colorbar(mesh, cax=color_axis)
-                # cbar.set_label('$col bar$', fontsize=21, labelpad=-2)
+                    data = mod_data[var][hr_idx, height_idx, :, :]
+                    # subsample further if UKV, to trim off some of the domain
+                    if model_type == 'UKV':
+                        data = data[:, lon_range]
 
-                # plot each ceilometer location
-                for site, loc in ceil_metadata.iteritems():
-                    # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
-                    ax.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
-                    ax.annotate(site, (loc[0], loc[1]))
+                    # fixed colourbar
+                    # mesh = plt.pcolormesh(lons, lats, mod_data['bsc_attenuated'][hr_idx, height_idx, :, :],
+                    #                       norm=LogNorm(), cmap=cm.get_cmap('jet'))
 
-                ax.set_xlabel(r'$Longitude$')
-                ax.set_ylabel(r'$Latitude$')
-                #plt.colorbar(mesh)
-                plt.suptitle(hr.strftime('%Y-%m-%d_%H') + '; height='+str(mod_data['level_height'][height_idx])+'m')
-                savesubdir = crosssavedir + hr.strftime('%Y-%m-%d') + '/' # sub dir within the savedir
-                # savename = hr.strftime('%Y-%m-%d_%H') + '_{:05.0f}'.format(mod_data['level_height'][height_idx]) + 'm_aer.png'
-                savename = '{:04.0f}'.format(mod_data['level_height'][height_idx]) + 'm_'+hr.strftime('%Y-%m-%d_%H')+'.png'
+                    if var == 'backscatter':
+                        mesh = ax.pcolormesh(lons, lats, data, vmin=vmin, vmax=vmax,
+                                              norm=LogNorm(), cmap=cm.get_cmap('jet'))
+                    else:
+                        mesh = ax.pcolormesh(lons, lats, data, vmin=vmin, vmax=vmax,
+                                              cmap=cm.get_cmap('jet'))
+                    ax.set_aspect(aspectRatio)
 
-                plt.tight_layout()
+                    the_divider = make_axes_locatable(ax)
+                    color_axis = the_divider.append_axes("right", size="5%", pad=0.1)
+                    cbar = plt.colorbar(mesh, cax=color_axis)
+                    # cbar.set_label('$col bar$', fontsize=21, labelpad=-2)
 
-                if os.path.exists(savesubdir) == False:
-                    os.mkdir(savesubdir)
-                plt.savefig(savesubdir + savename)
-                plt.close(fig)
+                    # plot each ceilometer location
+                    for site, loc in ceil_metadata.iteritems():
+                        # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
+                        ax.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
+                        ax.annotate(site, (loc[0], loc[1]))
+
+                    ax.set_xlabel(r'$Longitude$')
+                    ax.set_ylabel(r'$Latitude$')
+                    #plt.colorbar(mesh)
+                    plt.suptitle(hr.strftime('%Y-%m-%d_%H') + '; height='+str(mod_data['level_height'][height_idx])+'m')
+                    savesubdir = crosssavedir + hr.strftime('%Y-%m-%d') + '/' # sub dir within the savedir
+                    savename = '{:04.0f}'.format(mod_data['level_height'][height_idx]) + 'm_'+hr.strftime('%Y-%m-%d_%H')+'.png'
+
+                    plt.tight_layout()
+
+                    if os.path.exists(savesubdir) == False:
+                        os.mkdir(savesubdir)
+                    plt.savefig(savesubdir + savename)
+                    plt.close(fig)
 
     print 'END PROGRAM'
