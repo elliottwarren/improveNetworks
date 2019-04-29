@@ -12,8 +12,8 @@ sys.path.append('C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Bac
 
 import numpy as np
 
-#import matplotlib
-#matplotlib.use('Agg')
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cbook as cbook
 import os
@@ -127,7 +127,8 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
         idx_even = eu.binary_search_nearest(mod_data_day['time'], start_even)
         # idx positions for (midnight - pre_morning) and (post_evening - following midnight), concatonated
         #   gives the nighttime idx positions
-        idx_range = np.hstack([range(idx_morn+1), range(idx_even, len(mod_data_day['time']))])
+        # data inclues midnight of following day (a 25th hour), so leave that out and just go to 24
+        idx_range = np.hstack([range(idx_morn+1), range(idx_even, 24)])
 
         # extract out met variables with a time dimension
         met_vars = mod_data_day.keys()
@@ -167,7 +168,7 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
         elif 'subsample' in kwargs:
             if kwargs['subsample'] == 'daytime':
                 mod_data_day = extract_daytime(mod_data_day, day)
-            elif kwargs['subsample'] == 'nightime':
+            elif kwargs['subsample'] == 'nighttime':
                 mod_data_day = extract_nighttime(mod_data_day, day)
         else:
             if d == 0:
@@ -611,9 +612,9 @@ def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars):
             #stats.pearsonr(mod_data[var][:, :, lon_range].flatten(), y.flatten())
             #plt.scatter(mod_data[var][:, :, lon_range].flatten(), y.flatten())
 
-            plt.figure()
-            plt.hist(top_x, label='top', bins=500, alpha=0.5, color='blue')
-            plt.hist(bot_y, label='bot', bins=500, alpha=0.5, color='red')
+            # plt.figure()
+            # plt.hist(top_x, label='top', bins=500, alpha=0.5, color='blue')
+            # plt.hist(bot_y, label='bot', bins=500, alpha=0.5, color='red')
 
             # 2.0 get boxplot stats
             boxplot_stats_top[var] += cbook.boxplot_stats(top_x, whis=[5, 95])
@@ -957,6 +958,7 @@ def bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, bar
 
         savename = barsavedir + 'median_' + var + '_' + height_i_label + '_rotPCs.png'
         plt.savefig(savename)
+        plt.close(fig)
 
     return
 
@@ -1088,10 +1090,10 @@ if __name__ == '__main__':
     # --- User changes
 
     # data variable to plot
-    data_var = 'backscatter'
+    #data_var = 'backscatter'
     #data_var = 'air_temperature'
     #data_var = 'RH'
-    #data_var = 'aerosol_for_visibility'
+    data_var = 'aerosol_for_visibility'
 
     lon_range = np.arange(26, 65) # only London area (right hand side of larger domain)
 
@@ -1102,7 +1104,7 @@ if __name__ == '__main__':
     #pcsubsample = 'full'
     #pcsubsample = '11-18_hr_range'
     #pcsubsample = 'daytime'
-    pcsubsample = 'nightime'
+    pcsubsample = 'nighttime'
 
     # ------------------
 
