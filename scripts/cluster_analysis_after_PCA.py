@@ -31,25 +31,15 @@ import sys
 sys.path.append('C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/scripts')
 
 import numpy as np
-
+import iris
 #import matplotlib
 #matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import matplotlib.cbook as cbook
+
 import os
-import datetime as dt
-import pandas as pd
-from scipy import stats
-from copy import deepcopy
-from sklearn import cluster
 from sklearn.cluster import AgglomerativeClustering
 
-import ellUtils.ellUtils as eu
 import ceilUtils.ceilUtils as ceil
-
-from forward_operator import FOUtils as FO
-from forward_operator import FOconstants as FOcon
-
 
 if __name__ == '__main__':
 
@@ -59,99 +49,113 @@ if __name__ == '__main__':
     # ==============================================================================
 
     # --- User changes
-
     # data variable to plot
     data_var = 'backscatter'
     #data_var = 'air_temperature'
     #data_var = 'RH'
+    #data_var = 'aerosol_for_visibility'
 
     # subsampled?
     #pcsubsample = 'full'
-    pcsubsample = '11-18_hr_range'
+    #pcsubsample = '11-18_hr_range'
+    pcsubsample = 'daytime'
+    #pcsubsample = 'nighttime'
+
+    # cluster type - to match the AgglomerativeClustering function and used in savename
+    linkage_type = 'ward'
+
+    # number of clusters
+    n_clusters = 5
 
     # ------------------
 
     # which modelled data to read in
     model_type = 'UKV'
-    #res = FOcon.model_resolution[model_type]
-    #Z='21'
 
     # directories
     maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
     datadir = maindir + 'data/'
+    ukvdatadir = maindir + 'data/UKV/'
     ceilDatadir = datadir + 'L1/'
     modDatadir = datadir + model_type + '/'
     pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
     savedir = pcsubsampledir + data_var+'/'
-    expvarsavedir = savedir + 'explained_variance/'
-    rotexpvarsavedir = savedir + 'rot_explained_variance/'
-    barsavedir = savedir + 'barcharts/'
-    corrmatsavedir = savedir + 'corrMatrix/'
+    clustersavedir = savedir + '/cluster_analysis/'
     npysavedir = datadir + 'npy/PCA/'
 
-    # # intial test case
-    # # daystr = ['20180406']
-    # # daystr = ['20180903'] # low wind speed day (2.62 m/s)
-    # # current set (missing 20180215 and 20181101) # 08-03
-    # daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
-    #           '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
-    #           '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
-    #           '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
-    # days_iterate = eu.dateList_to_datetime(daystr)
-    # # a = [i.strftime('%Y%j') for i in days_iterate]
-    # # '\' \''.join(a)
-
-    # # import all site names and heights
-    # all_sites = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']
-    # site_bsc = ceil.extract_sites(all_sites, height_type='agl')
-
-
     # ==============================================================================
-    # Read and process data
+    # Read
     # ==============================================================================
 
-    # read in the unrotated loadings
-    filename = npysavedir + 'backscatter_11-18_hr_range_unrotLoadings_test.npy'
+    # make directory paths for the output figures
+    for dir_i in [clustersavedir]:
+        if os.path.exists(dir_i) == False:
+            os.mkdir(dir_i)
+
+    # 1. ceilometer metadata
+    ceilsitefile = 'improveNetworksCeils.csv'
+    ceil_metadata = ceil.read_ceil_metadata(datadir, ceilsitefile)
+
+    # 2. Loadings
+    # Read in the unrotated loadings and extract out the loadings (data), longitude and latitude (WGS84 space)
+    filename = npysavedir + data_var +'_'+pcsubsample+'_unrotLoadings.npy'
     raw = np.load(filename).flat[0]
     data = np.hstack(raw['loadings'].values())  # .shape(Xi, all_loadings)
+    # just get a few heights
+    #data = np.hstack([raw['loadings'][str(i)] for i in np.arange(7,20)])
     lons = raw['longitude']
     lats = raw['latitude']
 
+    # 3. Orography
+
+    # manually checked and lined up against UKV data used in PCA.
+    # slight mismatch due to different number precision used in both (hence why spacing is not used to reduce lower
+    #   longitude limit below.
+    if model_type == 'UKV':
+        spacing = 0.0135 # spacing between lons and lats in rotated space
+        UK_lat_constraint = iris.Constraint(grid_latitude=lambda cell: -1.2326999-spacing <= cell <= -0.7737+spacing)
+        UK_lon_constraint = iris.Constraint(grid_longitude=lambda cell: 361.21997 <= cell <= 361.73297+spacing)
+        orog = iris.load_cube(ukvdatadir + 'UKV_orography.nc', constraint=UK_lat_constraint & UK_lon_constraint)
+
+    # ==============================================================================
+    # Process data
+    # ==============================================================================
+
     #a = cluster.ward_tree(data, n_clusters=5)
-    cluster = AgglomerativeClustering(n_clusters=5, affinity='euclidean', linkage='ward')
+    #linkage_type = ''
+    cluster = AgglomerativeClustering(n_clusters=n_clusters, affinity='euclidean', linkage=linkage_type)
     cluster.fit_predict(data)
     cluster_groups = cluster.labels_
+
+    # split orography into groups based on clusters
+    orog_groups = [orog]
 
     # plot
     lat_shape = int(lats.shape[0])
     lon_shape = int(lons.shape[1])
     X_shape = int(lat_shape * lon_shape)
-    aspectRatio = float(lons.shape[0]) / float(lats.shape[0])
+    aspectRatio = float(lons.shape[0]) / float(lats.shape[1])
 
     groups_reshape = np.transpose(
         np.vstack([cluster_groups[n:n + lat_shape] for n in np.arange(0, X_shape, lat_shape)]))  # 1225
 
-    fig, ax = plt.subplots(1, 1, figsize=(4.5 * aspectRatio, 4.5))
-    plt.pcolormesh(lons, lats, groups_reshape)
-    plt.colorbar()
+    #fig, ax = plt.subplots(1, 1, figsize=(4.0, 4.0))  # * aspectRatio
+    fig = plt.figure(figsize=(6.0, 6.0*0.7*aspectRatio))  # * aspectRatio
+    ax = fig.add_subplot(111, aspect=aspectRatio)
+
+    pcmesh = ax.pcolormesh(lons, lats, groups_reshape)
     ax.set_xlabel(r'$Longitude$')
     ax.set_ylabel(r'$Latitude$')
-
-    # highlight highest value across EOF
-    # eof_i_max_idx = np.where(eof_i_reshape == np.max(eof_i_reshape))
-    # plt.scatter(lons[eof_i_max_idx][0], lats[eof_i_max_idx][0], facecolors='none', edgecolors='black')
-    # plt.annotate('max', (lons[eof_i_max_idx][0], lats[eof_i_max_idx][0]))
+    plt.tight_layout()
 
     # plot each ceilometer location
     for site, loc in ceil_metadata.iteritems():
-        # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
         plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
         plt.annotate(site, (loc[0], loc[1]))
 
-    plt.suptitle(matrix_type + str(m_idx + 1) + '; height=' + height_i_label + str(
-        len(days_iterate)) + ' cases')
-    savename = height_i_label + '_' + matrix_type + str(m_idx + 1) + '_' + data_var + '.png'
-    plt.savefig(matrixsavedir + savename)
+    plt.suptitle(data_var+': '+pcsubsample+'; '+linkage_type)
+    savename = data_var+'_'+pcsubsample+'_CA_'+str(n_clusters)+'clusters.png'
+    plt.savefig(clustersavedir + savename)
     plt.close(fig)
 
 
