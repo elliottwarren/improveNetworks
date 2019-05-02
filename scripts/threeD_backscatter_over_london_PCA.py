@@ -12,10 +12,11 @@ sys.path.append('C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Bac
 
 import numpy as np
 
-import matplotlib
-matplotlib.use('Agg')
+#import matplotlib
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cbook as cbook
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 import os
 import datetime as dt
 import pandas as pd
@@ -547,7 +548,8 @@ def rotate_loadings_and_calc_scores(loadings, cov_data, eig_vals):
     return reordered_rot_loadings, reordered_rot_pcScores, perc_var_explained_ratio_rot
 
 # statistics
-def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars):
+def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars, ceil_metadata, height_i_label,
+                                 topmeddir, botmeddir):
 
     """
     Calculate statistics for each variable, for each PC, for this height
@@ -558,7 +560,66 @@ def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars):
     :return: statistics_height (dict([var][pc_i_name])): statistics for this height
     """
 
-    # derive and store the boxplot statistics for each met. variable in boxplot_stats
+    def plot_medians(med, lons, lats, ceil_metadata, pc_i_name, height_i_label, var, days_iterate, meddir,
+                     med_type, wpvalue):
+
+        """
+        Plot the top or bottom median
+        :param med:
+        :param lons:
+        :param lats:
+        :param ceil_metadata:
+        :param pc_i_name:
+        :param height_i_label:
+        :param var:
+        :param days_iterate:
+        :param meddir:
+        :param med_type:
+        :param wpvalue:
+        :return:
+        """
+
+        def forceAspect(ax, aspect=1):
+            im = ax.get_images()
+            extent = im[0].get_extent()
+            ax.set_aspect(abs((extent[1] - extent[0]) / (extent[3] - extent[2])) / aspect)
+
+        vmin = np.percentile(med, 2)
+        vmax = np.percentile(med, 98)
+
+        aspectRatio = float(lons.shape[0]) / float(lats.shape[1])
+        fig, ax = plt.subplots(1, 1, figsize=(4.5, 4.5*0.8))
+        # fig, ax = plt.subplots(1, 1, figsize=(4.5 * 1.0, 4.5))
+        mesh=plt.pcolormesh(lons, lats, med, cmap=plt.get_cmap('jet'), vmin=vmin, vmax=vmax)
+        #plt.colorbar()
+        the_divider = make_axes_locatable(ax)
+        color_axis = the_divider.append_axes("right", size="5%", pad=0.1)
+        cbar = plt.colorbar(mesh, cax=color_axis)
+        ax.set_xlabel(r'$Longitude$')
+        ax.set_ylabel(r'$Latitude$')
+
+        #ax.axes.set_aspect(1)#(aspectRatio)
+
+
+        # plot each ceilometer location
+        for site, loc in ceil_metadata.iteritems():
+            # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
+            plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
+            plt.annotate(site, (loc[0], loc[1]))
+        plt.tight_layout()
+        plt.subplots_adjust(top=0.8, bottom=0.2)
+        #forceAspect(ax,aspect=aspectRatio)
+
+        plt.suptitle(med_type + '; ' + pc_i_name + '; height=' + height_i_label + '; ' + var + ';\n ' + str(
+            len(days_iterate)) + ' cases; p=%5.2f' % wpvalue)
+        savename = height_i_label + '_' + med_type + '_' + var + pc_i_name + '_' + '.png'
+        plt.savefig(meddir + savename)
+        plt.close(fig)
+
+        return
+
+        # derive and store the boxplot statistics for each met. variable in boxplot_stats
+
     boxplot_stats_top = {}
     boxplot_stats_bot = {}
     statistics_height = {}
@@ -596,9 +657,9 @@ def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars):
             if model_type == 'UKV':
                 # top_x = mod_data[var][top_scores_idx[:,np.newaxis], :, lon_range[:,np.newaxis]].flatten()
                 top_x = mod_data[var][top_scores_idx, :, :]
-                top_x = top_x[:, :, lon_range].flatten()
+                top_x = top_x[:, :, lon_range]#.flatten()
                 bot_y = mod_data[var][lower_scores_idx, :, :]
-                bot_y = bot_y[:, :, lon_range].flatten()
+                bot_y = bot_y[:, :, lon_range]#.flatten()
             else:
                 raise ValueError('Need to define how to subsample top_x and bot_y from different model ([scores_idx, :, :])?')
 
@@ -606,12 +667,32 @@ def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars):
                 top_x = np.log10(top_x)
                 bot_y = np.log10(bot_y)
 
+            # median stats
+            top_x_med = np.median(top_x, axis=0)
+            bot_y_med = np.median(bot_y, axis=0)
+
+            # flatten top_x and bot_y
+            top_x = top_x.flatten()
+            bot_y = bot_y.flatten()
+
+            # Wilcoxon signed-rank test FOR MEDIANS - comparison between two dependent samples
+            wstat, wpvalue = stats.wilcoxon(top_x_med.flatten(), bot_y_med.flatten())
+            statistics_i['wilcoxon_signed_rank_w_medians'] = wstat
+            statistics_i['wilcoxon_signed_rank_p_medians'] = wpvalue
+
+            # plot and save, top and bottom medians
+            plot_medians(top_x_med, lons, lats, ceil_metadata, pc_i_name, height_i_label, var, days_iterate,
+                         topmeddir, 'top_median', wpvalue)
+            plot_medians(bot_y_med, lons, lats, ceil_metadata, pc_i_name, height_i_label, var, days_iterate,
+                         botmeddir, 'bot_median', wpvalue)
+
+
+
             # repeat array to match dimensions of original data.
             #y = np.squeeze([[[reordered_rot_pcScores[:, i]]*35]*39]).T
             #plt.figure() # (326L, 35L, 39L) = data.
             #stats.pearsonr(mod_data[var][:, :, lon_range].flatten(), y.flatten())
             #plt.scatter(mod_data[var][:, :, lon_range].flatten(), y.flatten())
-
             # plt.figure()
             # plt.hist(top_x, label='top', bins=500, alpha=0.5, color='blue')
             # plt.hist(bot_y, label='bot', bins=500, alpha=0.5, color='red')
@@ -705,50 +786,51 @@ def plot_corr_matrix_table(matrix, mattype, data_var, height_i_label):
     plt.close()
     return
 
-def plot_EOFs_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
-                       days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var):
-
-    """Plot all EOFs for this height - save in eofsavedir (should be a subdirectory based on subsampled input data)"""
-
-    for eof_idx in np.arange(eig_vecs_keep.shape[0]):
-
-        # etract out eof_i
-        eof_i = eig_vecs_keep[eof_idx, :]
-
-        # NEED to check if this is rotated back correctly (it might need tranposing)
-        # as it was stacked row/latitude wise above (row1, row2, row3)
-        # transpose turns shape into (lat, lon) (seems a little odd but needs to be plotted that
-        #   way by plt.pcolormesh() to get the axis right...
-        eof_i_reshape = np.transpose(
-            np.vstack([eof_i[n:n + lat_shape] for n in np.arange(0, X_shape, lat_shape)]))  # 1225
-
-        fig, ax = plt.subplots(1, 1, figsize=(4.5 * aspectRatio, 4.5))
-        plt.pcolormesh(lons, lats, eof_i_reshape)
-        plt.colorbar()
-        ax.set_xlabel(r'$Longitude$')
-        ax.set_ylabel(r'$Latitude$')
-
-        # highlight highest value across EOF
-        eof_i_max_idx = np.where(eof_i_reshape == np.max(eof_i_reshape))
-        plt.scatter(lons[eof_i_max_idx][0], lats[eof_i_max_idx][0], facecolors='none', edgecolors='black')
-        plt.annotate('max', (lons[eof_i_max_idx][0], lats[eof_i_max_idx][0]))
-
-        # plot each ceilometer location
-        for site, loc in ceil_metadata.iteritems():
-            # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
-            plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
-            plt.annotate(site, (loc[0], loc[1]))
-
-        plt.suptitle('EOF' + str(eof_idx + 1) + '; height=' + height_i_label + str(
-            len(days_iterate)) + ' cases')
-        savename = height_i_label +'_EOF' + str(eof_idx + 1) + '_' + data_var + '.png'
-        plt.savefig(eofsavedir + savename)
-        plt.close(fig)
-
-    return
-
+# def plot_EOFs_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
+#                        days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var):
+#
+#     """Plot all EOFs for this height - save in eofsavedir (should be a subdirectory based on subsampled input data)"""
+#
+#     for eof_idx in np.arange(eig_vecs_keep.shape[0]):
+#
+#         # etract out eof_i
+#         eof_i = eig_vecs_keep[eof_idx, :]
+#
+#         # NEED to check if this is rotated back correctly (it might need tranposing)
+#         # as it was stacked row/latitude wise above (row1, row2, row3)
+#         # transpose turns shape into (lat, lon) (seems a little odd but needs to be plotted that
+#         #   way by plt.pcolormesh() to get the axis right...
+#         eof_i_reshape = np.transpose(
+#             np.vstack([eof_i[n:n + lat_shape] for n in np.arange(0, X_shape, lat_shape)]))  # 1225
+#
+#         fig, ax = plt.subplots(1, 1, figsize=(4.5 * aspectRatio, 4.5))
+#         plt.pcolormesh(lons, lats, eof_i_reshape)
+#         plt.colorbar()
+#         ax.set_xlabel(r'$Longitude$')
+#         ax.set_ylabel(r'$Latitude$')
+#
+#         # highlight highest value across EOF
+#         eof_i_max_idx = np.where(eof_i_reshape == np.max(eof_i_reshape))
+#         plt.scatter(lons[eof_i_max_idx][0], lats[eof_i_max_idx][0], facecolors='none', edgecolors='black')
+#         plt.annotate('max', (lons[eof_i_max_idx][0], lats[eof_i_max_idx][0]))
+#
+#         # plot each ceilometer location
+#         for site, loc in ceil_metadata.iteritems():
+#             # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
+#             plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
+#             plt.annotate(site, (loc[0], loc[1]))
+#
+#         plt.suptitle('EOF' + str(eof_idx + 1) + '; height=' + height_i_label + str(
+#             len(days_iterate)) + ' cases')
+#         savename = height_i_label +'_EOF' + str(eof_idx + 1) + '_' + data_var + '.png'
+#         plt.savefig(eofsavedir + savename)
+#         plt.close(fig)
+#
+#     return
+#
 def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedir,
-                       days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var, matrix_type):
+                       days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
+                       perc_var_explained, matrix_type):
 
     """Plot all EOFs for this height - save in eofsavedir (should be a subdirectory based on subsampled input data)"""
 
@@ -756,6 +838,9 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
 
         # etract out eof_i
         m_i = matrix[:, m_idx]
+
+        # var explained for this eof
+        var_exp_i = perc_var_explained[m_idx]
 
         # NEED to check if this is rotated back correctly (it might need tranposing)
         # as it was stacked row/latitude wise above (row1, row2, row3)
@@ -782,8 +867,8 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
             plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
             plt.annotate(site, (loc[0], loc[1]))
 
-        plt.suptitle(matrix_type + str(m_idx + 1) + '; height=' + height_i_label + str(
-            len(days_iterate)) + ' cases')
+        plt.suptitle(matrix_type + str(m_idx + 1) + '; height=' + height_i_label + '; ' + '%3.2f' % var_exp_i +'%; '+
+                     str(len(days_iterate)) + ' cases')
         savename = height_i_label +'_'+matrix_type + str(m_idx + 1) + '_' + data_var + '.png'
         plt.savefig(matrixsavedir + savename)
         plt.close(fig)
@@ -1090,10 +1175,10 @@ if __name__ == '__main__':
     # --- User changes
 
     # data variable to plot
-    #data_var = 'backscatter'
+    data_var = 'backscatter'
     #data_var = 'air_temperature'
     #data_var = 'RH'
-    data_var = 'aerosol_for_visibility'
+    #data_var = 'aerosol_for_visibility'
 
     lon_range = np.arange(26, 65) # only London area (right hand side of larger domain)
 
@@ -1103,8 +1188,8 @@ if __name__ == '__main__':
     # subsampled?
     #pcsubsample = 'full'
     #pcsubsample = '11-18_hr_range'
-    #pcsubsample = 'daytime'
-    pcsubsample = 'nighttime'
+    pcsubsample = 'daytime'
+    #pcsubsample = 'nighttime'
 
     # ------------------
 
@@ -1120,6 +1205,8 @@ if __name__ == '__main__':
     modDatadir = datadir + model_type + '/'
     pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
     savedir = pcsubsampledir + data_var+'/'
+    topmeddir = savedir + 'top_median/'
+    botmeddir = savedir + 'bot_median/'
     eofsavedir = savedir + 'EOFs/'
     rotEOFsavedir = savedir + 'rotEOFs/'
     rotPCscoresdir = savedir + 'rotPCs/'
@@ -1162,7 +1249,8 @@ if __name__ == '__main__':
     # pcsubsampledir, then savedir needs to be checked first as they are parent dirs
     for dir_i in [pcsubsampledir, savedir,
                   eofsavedir, pcsavedir, expvarsavedir, rotexpvarsavedir, rotEOFsavedir, rotPCscoresdir,
-                  boxsavedir, corrmatsavedir]:
+                  boxsavedir, corrmatsavedir,
+                  topmeddir, botmeddir]:
         if os.path.exists(dir_i) == False:
             os.mkdir(dir_i)
 
@@ -1301,7 +1389,8 @@ if __name__ == '__main__':
         # Includes creating a dictionary of statistics for box plotting, without needing to export the whole
         #   distribution
         statistics_height, boxplot_stats_top, boxplot_stats_bot = \
-            pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars)
+            pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars, ceil_metadata, height_i_label,
+                                 topmeddir, botmeddir)
         # copy statistics for this height into the full statistics dicionary for all heights
         statistics[height_idx_str] = deepcopy(statistics_height)
 
@@ -1316,11 +1405,11 @@ if __name__ == '__main__':
         # unrotated
         plot_spatial_output_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
                                      days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
-                                     'EOFs')
+                                     perc_var_explained_unrot_keep, 'EOFs')
         # rotated EOFs
         plot_spatial_output_height_i(reordered_rot_loadings, ceil_metadata, lons, lats, rotEOFsavedir,
                                      days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
-                                     'rotEOFs')
+                                     perc_var_explained_ratio_rot, 'rotEOFs')
 
         # 2. Explain variance vs EOF number
         # unrot
