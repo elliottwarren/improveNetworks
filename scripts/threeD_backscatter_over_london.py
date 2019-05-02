@@ -190,10 +190,11 @@ if __name__ == '__main__':
     # # test case from unused paper 2 UKV data
     # daystr = ['20180903']`
     # current set (missing 20180215 and 20181101) ## start again at 15-05-2018
-    daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
-              '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
-              '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
-              '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
+    # daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
+    #           '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
+    #           '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
+    #           '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
+    daystr = ['20180902','20180903','20181007','20181010','20181020','20181023']
     days_iterate = eu.dateList_to_datetime(daystr)
     #[i.strftime('%Y%j') for i in days_iterate]
 
@@ -242,8 +243,11 @@ if __name__ == '__main__':
             if os.path.exists(crosssavedir) == False:
                 os.mkdir(crosssavedir)
 
+            # fig = plt.figure(figsize=(6.5, 3.5))
+            # ax = fig.add_subplot(111, aspect=aspectRatio)
+
             # fast plot - need to convert lon and lats from centre points to corners for pcolormesh()
-            for height_idx, height_i in enumerate(mod_data['level_height'][:25]):
+            for height_idx, height_i in enumerate(mod_data['level_height'][:24]):
 
                 # plotting limits for this height
                 # Extract is transposed when indexed like this but
@@ -251,10 +255,9 @@ if __name__ == '__main__':
                 vmax = np.percentile(mod_data[var][:, height_idx, :, lon_range], 98)
 
                 for hr_idx, hr in enumerate(mod_data['time'][:-1]):  # miss out midnight of the next day...
-                    #fig, ax = plt.subplots(1, 1, figsize=(6.0*aspectRatio, 6.0))
                     fig = plt.figure(figsize=(6.5, 3.5))
                     ax = fig.add_subplot(111, aspect=aspectRatio)
-                    # fig, ax = plt.subplots(1, 1, figsize=(3*aspectRatio, 4.5))
+
 
                     data = mod_data[var][hr_idx, height_idx, :, :]
                     # subsample further if UKV, to trim off some of the domain
@@ -264,6 +267,12 @@ if __name__ == '__main__':
                     # fixed colourbar
                     # mesh = plt.pcolormesh(lons, lats, mod_data['bsc_attenuated'][hr_idx, height_idx, :, :],
                     #                       norm=LogNorm(), cmap=cm.get_cmap('jet'))
+
+                    # if (hr_idx > 0) & (height_idx > 0):
+                    #     mesh.set_array(data.ravel())
+                    #     fig.canvas.draw()
+                    #     fig.canvas.flush_events()
+
 
                     if var == 'backscatter':
                         mesh = ax.pcolormesh(lons, lats, data, vmin=vmin, vmax=vmax,
