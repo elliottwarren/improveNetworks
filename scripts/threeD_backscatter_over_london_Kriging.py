@@ -13,41 +13,33 @@ import sys
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/Utils') #aerFO
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ellUtils') # general utils
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ceilUtils') # ceil utils
-sys.path.append('/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/scripts')
 
-import matplotlib
-matplotlib.use('Agg') # needed as SPICE does not have a monitor and will crash otherwise if plotting is used
+
+
+import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import matplotlib.cm as cm
 import matplotlib.colors as colors
-
-import numpy as np
 import os
 import math
 import datetime as dt
 
-#from threeD_backscatter_over_london_by_hour import all_semivariance
-#import threeD_backscatter_over_london_by_hour as td
-
-import dask.multiprocessing
-import dask
-#import dask.array as da
-from dask import compute, delayed
-
-# import ellUtils as eu
-# import ceilUtils as ceil
-# from Utils import FOUtils as FO
-# from Utils import FOconstants as FOcon
-
-import ellUtils as eu
-import ceilUtils as ceil
-import FOUtils as FO
-import FOconstants as FOcon
+if sys.platform == 'win32':
+    from ellUtils import ellUtils as eu
+    from ceilUtils import ceilUtils as ceil
+    from forward_operator import FOUtils as FO
+    from forward_operator import FOconstants as FOcon
+else:
+    import ellUtils as eu
+    import ceilUtils as ceil
+    from Utils import FOUtils as FO
+    from Utils import FOconstants as FOcon
 
 from pykrige.ok import OrdinaryKriging
-from pykrige.core import _calculate_variogram_model
-from pykrige import variogram_models
+# from pykrige.uk import UniversalKriging
+# from pykrige.ok3d import OrdinaryKriging3D
+# from pykrige.rk import Krige
 # from pykrige.compat import GridSearchCV
 
 # Kriging Doc: https://media.readthedocs.org/pdf/pykrige/latest/pykrige.pdf
@@ -96,11 +88,11 @@ def convert_deg_to_km(longitude, latitude):
 
     r = 6370.0  # [km] radius of Earth
     c = 2.0 * math.pi * r  # [km] circumference of Earth
-    
+
     # bottom left grid cell
     lon_0 = longitude[0]
     lat_0 = latitude[0]
-    
+
     # Empty arrays to fill
     rotlon_km = np.empty(longitude.shape)
     rotlon_km[:] = np.nan
@@ -204,176 +196,130 @@ if __name__ == '__main__':
     # data variable to plot
     data_var = 'backscatter'
     # data_var = 'RH'
-    
+
     height_range = np.arange(0,30) # only first set of heights
     lon_range = np.arange(30, 65) # only London area (right hand side of larger domain -35:
-    
+
     # save?
     numpy_save = True
-    
+
     # ------------------
-    
+
     # which modelled data to read in
-    #model_type = 'UKV'
-    model_type = 'LM'
-    # res = FOcon.model_resolution[model_type]
+    model_type = 'UKV'
+    res = FOcon.model_resolution[model_type]
 
     # directories
-    if model_type == 'UKV':
-        maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-        datadir = maindir + 'data/'
-        ceilmetadatadir = datadir
-        ceilDatadir = datadir + 'L1/'
-        modDatadir = datadir + model_type + '/'
-        variogramsavedir = maindir + 'figures/model_runs/variograms/'
-        twodrangedir = maindir + 'figures/model_runs/2D_range/'
-        twodsilledir = maindir + 'figures/model_runs/2D_sill/'
-        twodRangeCompositeDir = twodrangedir + 'composite/'
-        npy_savedir = datadir + 'npy/'
-        
-        max_height_num = 41
-        
-    elif model_type == 'LM':
-        maindir = os.environ.get('HOME') + '/Documents/AerosolBackMod/scripts/improveNetworks/'
-        datadir = os.environ.get('SCRATCH') + '/' + model_type + '/full_forecast/'
-        modDatadir = datadir
-        ceilDatadir = os.environ.get('DATADIR') + '/MLH/'
-        ceilmetadatadir = os.environ.get('DATADIR') + '/metadata/'
-        variogramsavedir = maindir + 'figures/variograms/'+model_type+'/'
-        twodrangedir = maindir + 'figures/2D_range/'+model_type+'/'
-        npy_savedir = os.environ.get('DATADIR') + '/npy/'
-        daskmapsavedir = os.environ.get('DATADIR') + '/dask_maps/'
-        npy_savedir = os.environ.get('DATADIR')+'/npy/'+model_type+'/'
-        
-        max_height_num = 30
+    maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
+    datadir = maindir + 'data/'
+    ceilDatadir = datadir + 'L1/'
+    modDatadir = datadir + model_type + '/'
+    variogramsavedir = maindir + 'figures/model_runs/variograms/'
+    twodrangedir = maindir + 'figures/model_runs/2D_range/'
+    twodsilledir = maindir + 'figures/model_runs/2D_sill/'
+    twodRangeCompositeDir = twodrangedir + 'composite/'
+    npysavedir = datadir + 'npy/'
 
     # intial test case
     # daystr = ['20180406']
     # daystr = ['20180903'] # low wind speed day (2.62 m/s)
     # current set (missing 20180215 and 20181101) # 08-03
-    # UKV set
-#     daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
-#               '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
-#               '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
-#               '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
-    
-    daystr = ['20180418'] # first of the LM cases
-    
+    daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
+              '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
+              '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
+              '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
     days_iterate = eu.dateList_to_datetime(daystr)
-    
+
     # save name
     # savestr = day.strftime('%Y%m%d') + '_3Dbackscatter.npy'
-    
-    
+
+
     # import all site names and heights
     all_sites = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']
-    
+
     # get height information for all the sites
     site_bsc = ceil.extract_sites(all_sites, height_type='agl')
-    
+
     # ==============================================================================
     # Read and process data
     # ==============================================================================
-    
+
     # print data variable to screen
     print data_var
-    
+
     # ceilometer list to use
     ceilsitefile = 'improveNetworksCeils.csv'
-    ceil_metadata = ceil.read_ceil_metadata(ceilmetadatadir, ceilsitefile)
-    
+    ceil_metadata = ceil.read_ceil_metadata(datadir, ceilsitefile)
+
     # empty arrays to fill  (day, hour, height)
-    sill = np.empty((24, max_height_num))
+    sill = np.empty((len(days_iterate), 24, 41))
     sill[:] = np.nan
-    
+
     # empty arrays to fill  (day, hour, height)
-    v_range = np.empty((24, max_height_num))
+    v_range = np.empty((len(days_iterate), 24, 41))
     v_range[:] = np.nan
-    
+
     # empty arrays to fill  (day, hour, height)
-    nugget = np.empty((24, max_height_num))
+    nugget = np.empty((len(days_iterate), 24, 41))
     nugget[:] = np.nan
-    
-    U_mean = np.empty((24))
+
+    U_mean = np.empty((len(days_iterate)))
     U_mean[:] = np.nan
-    
-    aer_mean = np.empty((24))
+
+    aer_mean = np.empty((len(days_iterate)))
     aer_mean[:] = np.nan
-    
-    rh_mean = np.empty((24))
+
+    rh_mean = np.empty((len(days_iterate)))
     rh_mean[:] = np.nan
 
-    # d = 0; day = days_iterate[0]
     for d, day in enumerate(days_iterate):
-        
-        os.system('echo day = ' + day.strftime('%Y-%m-%d'))
-        #print 'day = ' + day.strftime('%Y-%m-%d')
-        
+
+        print 'day = ' + day.strftime('%Y-%m-%d')
+
         # times to match to, so the time between days will line up
         start = dt.datetime(day.year, day.month, day.day, 0, 0, 0)
         end = start + dt.timedelta(days=1) - dt.timedelta(minutes=60)
         time_match = eu.date_range(start, end, 1, 'hour')
-        
+
         # calculate the 3D backscatter field across London
         # .shape = (hour, height, lat, lon)
         mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, 905, allvars=True)
-
-        # reduce domain size to match UKV extract
-        # domain edges found using eu.nearest compared to the UKV extract domain edges
-        if model_type == 'UKV':
-            mod_data['longitude'] = mod_data['longitude'][lon_range]
-            mod_data[data_var] = mod_data[data_var][:, :, :, lon_range]
-            mod_data['u_wind'] = mod_data['u_wind'][:, :, :, lon_range]
-            mod_data['v_wind'] = mod_data['v_wind'][:, :, :, lon_range]
-            mod_data['RH'] = mod_data['RH'][:, :, :, lon_range]
-            mod_data['aerosol_for_visibility'] = mod_data['aerosol_for_visibility'][:, :, :, lon_range]
-            
 
         # rotate the lon and lats onto a normal geodetic grid (WGS84) [degrees] and expands lon and lat by 1 so it can
         # be used in plt.pcolormesh() which wants corner edges not center points
         # rotLon2d_deg, rotLat2d_deg = rotate_lon_lat_2D(mod_data['longitude'], mod_data['latitude'], model_type)
 
         # convert lons and lats to distance [km] from the bottom left corner of the grid
-        unrotLon2d, unrotLat2d, unrotLon1d, unrotLat1d= convert_deg_to_km(mod_data['longitude'], mod_data['latitude'])
-        
-        max_lags = np.max(unrotLon2d.shape)
-        
-        # read in MLH data
-        mlh_obs = ceil.read_all_ceils(day, site_bsc, ceilDatadir, 'MLH', timeMatch=time_match)
+        unrotLon2d, unrotLat2d, unrotLon1d, unrotLat1d= convert_deg_to_km(mod_data['longitude'][lon_range], mod_data['latitude'])
 
         # find important days (low wind, high aerosol
         # U wind from ground to 955 m - try to find day with lowest wind values (more local source emissions)
         # alternative - try when murk was high!
-        for hr_idx, hr in enumerate(mod_data['time'][:-1]):
-            U = np.sqrt((mod_data['u_wind']**2.0) + (mod_data['v_wind'][hr_idx, :, :-1, :-1]**2.0))
-            U_mean[hr_idx] = np.nanmean(U)
-            aer_mean[hr_idx] = np.nanmean(mod_data['aerosol_for_visibility'][hr_idx, :, :, :])
-            rh_mean[hr_idx] = np.nanmean(mod_data['RH'][hr_idx, :, :, :])
+        U = np.sqrt((mod_data['u_wind'][:, :16, :, :]**2.0) + (mod_data['v_wind'][:, :16, :, :]**2.0))
+        U_mean[d] = np.nanmean(U)
+        aer_mean[d] = np.nanmean(mod_data['aerosol_for_visibility'][:, :16, :, :])
+        rh_mean[d] = np.nanmean(mod_data['RH'][:, :16, :, :])
+        # read in MLH data
+        mlh_obs = ceil.read_all_ceils(day, site_bsc, ceilDatadir, 'MLH', timeMatch=time_match)
 
         # ==============================================================================
         # Kriging
         # ==============================================================================
         # .shape(time, height, lat, lon) # definately lat then lon ...
 
-        #height_idx = 0; height_i = 5.0; hr_idx = 0; hr = mod_data['time'][0]
         for height_idx, height_i in enumerate(mod_data['level_height'][height_range]): # [:20]
-            #print 'h = ' + str(height_i)
-            
-            os.system('echo h = ' + str(height_i))
-            # hr_idx = 0; hr = mod_data['time'][0]
+            print 'h = ' + str(height_i)
             for hr_idx, hr in enumerate(mod_data['time'][:-1]): # ignore midnight next day
-
-                os.system('echo hr = ' + str(hr))
 
                 # extract 2D cross section for this time
                 # just London area
                 if data_var == 'backscatter':# or
-                    data = np.log10(mod_data[data_var][hr_idx, height_idx, :, :]) # [-35:]
+                    data = np.log10(mod_data[data_var][hr_idx, height_idx, :, lon_range]) # [-35:]
                     #print 'data logged'
                 elif data_var == 'specific_humidity':
-                    data = np.log10(mod_data[data_var][hr_idx, height_idx, :, :]*1e3) # [g kg-1]
+                    data = np.log10(mod_data[data_var][hr_idx, height_idx, :, lon_range]*1e3) # [g kg-1]
                 else:
-                    data = mod_data[data_var][hr_idx, height_idx, :, :]
+                    data = mod_data[data_var][hr_idx, height_idx, :, lon_range]
 
                 #ToDo Find best model to fit on the variogram, then pass best model into the main OrdinaryKriging() function
                 # use the kriging guide to help with this
@@ -412,182 +358,39 @@ if __name__ == '__main__':
                 #         print(' - {} : {}'.format(key, estimator.cv_results_[key]))
 
 
-
-
-
-
-
-                # Create the semivariance and lags
-                # appending dmax += 0.001 ensure maximum bin is included
-                nlags = np.max(list(data.shape))
-                dmin = unrotLat2d[1,0] # equidistant grid, therefore the first box across ([1,0]) will have the minimum distance 
-                dmax = np.sqrt((np.amax(unrotLat2d)**2) + (np.amax(unrotLon2d)**2)) # [km] - diag distance to opposite corner of domain
-                
-                dd = (dmax - dmin) / nlags # average nlag spacing
-                bins = [dmin + n * dd for n in range(nlags)]
-                dmax += 0.001 
-                bins.append(dmax)
-                
-                # load in lags to limit computation expense (save if needed)
-                lags = np.load(npy_savedir + 'lags/'+model_type+'_lags.npy')
-                #np.save(npy_savedir + 'lags/'+model_type+'_lags.npy', lags_full)
-                
-                
-                # set up semivariance array ready
-                #semivariance = np.zeros(nlags) # semivariance within each lag bin
-                #semivariance[:] = np.nan
-                
-                # sample size for each lag. Start at 0 and add them up as more idx pairs are found
-                #m = np.zeros(nlags)
-                
-                # maximum idx position for each dimension
-                idx_max = [j - 1 for j in data.shape]
-                
-                # create euclidean distance matrix (from point [0,0])
-                # only creates distances for one quadrant (top right) effectively
-                distance = np.sqrt((unrotLat2d**2) + (unrotLon2d**2))
-                
-#                 plt.figure()
-#                 plt.pcolormesh(distance)
-#                 plt.colorbar()
-#                 plt.show()
-                 
-                os.system('echo calculating semivariance @ '+str(dt.datetime.now()))
-                
-                
-                semivariance_full, m_full, lags_full = all_semivariance(bins, data, distance, idx_max)
-                
-                #print 'semivariance_full'
-                #print semivariance_full
-                #print 'm_full'
-                #print m_full
-                
-                #fig = d.visualise()
-                #plt.savefig(daskmapsavedir + 'debugging_map.png')
-                #a = d.compute()
-                
-                #print'\n\n\n\n\n'
-        
-                
-                semivariance = np.array(semivariance_full)
-                m = np.array(m_full)
-                lags = np.array(lags_full) 
-                
-                os.system('echo about to make the variogram @ '+str(dt.datetime.now()))
-                
                 # choose variogram model based on cross validation test reslts
                 variogram_model = 'spherical'
-                variogram_function = variogram_models.spherical_variogram_model
-                weight = True
-                
-                # with the bins and semivariance, do the fitting
-                variogram_model_parameters = \
-                        _calculate_variogram_model(lags, semivariance, variogram_model,
-                                                   variogram_function, weight)
-        
-                # plot variogram
-                fig = plt.figure()
-                ax = fig.add_subplot(111)
-                ax.plot(lags, semivariance, 'r*')
-                ax.plot(lags,
-                        variogram_function(variogram_model_parameters,
-                                                lags), 'k-')
-        
-                ax = plt.gca()
-                plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height=' + str(mod_data['level_height'][0]) + 'm')
-                ax.set_xlabel('Distance [km]')
-                ax.set_ylabel('Semi-variance')
-                savesubdir = variogramsavedir + hr.strftime('%Y-%m-%d') + '/'
-                savename = hr.strftime('%Y-%m-%d_%H') +  '_{:05.0f}'.format(mod_data['level_height'][0]) + 'm_variogram'
-                
-                if os.path.exists(savesubdir) == False:
-                    os.mkdir(savesubdir)
-                plt.savefig(savesubdir + savename)
-                plt.close()
-        
-                os.system('echo made and saved the variogram @ '+str(dt.datetime.now()))
-        
-        #         # Ordinary Kriging: 3.1.1 in pykrige documentation
-        #         # Function fails when given 2D arrays so pass in flattened 1D arrays of the 2D data.
-        #         OK = OrdinaryKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(),
-        #                              variogram_model=variogram_model, nlags=1440, weight=True, enable_plotting=True) # verbose=True,enable_plotting=True,
-        
-    
-        
+
+                # Ordinary Kriging: 3.1.1 in pykrige documentation
+                # Function fails when given 2D arrays so pass in flattened 1D arrays of the 2D data.
+                OK = OrdinaryKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(),
+                                     variogram_model=variogram_model, nlags=35, weight=True) # verbose=True,enable_plotting=True,
+
+                # ax = plt.gca()
+                # plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height=' + str(mod_data['level_height'][height_idx]) + 'm')
+                # ax.set_xlabel('Distance [km]')
+                # ax.set_ylabel('Semi-variance')
+                # savesubdir = variogramsavedir + hr.strftime('%Y-%m-%d') + '/'
+                # savename = hr.strftime('%Y-%m-%d_%H') +  '_{:05.0f}'.format(mod_data['level_height'][height_idx]) + 'm_variogram'
+                #
+                # if os.path.exists(savesubdir) == False:
+                #     os.mkdir(savesubdir)
+                # plt.savefig(savesubdir + savename)
+                # plt.close()
+
                 # # look at variogram_model_parameters to find the nugget, sill etc.
                 # #! list order varies, depending on the variogram_model used!
                 # #! gives back partial sill (full sill - nugget), not the full sill
                 if variogram_model == 'spherical':
-                     sill[hr_idx, height_idx] = variogram_model_parameters[0]
-                     v_range[hr_idx, height_idx] = variogram_model_parameters[1]
-                     nugget[hr_idx, height_idx] = variogram_model_parameters[2]
+                    sill[d, hr_idx, height_idx] = OK.variogram_model_parameters[0]
+                    v_range[d, hr_idx, height_idx] = OK.variogram_model_parameters[1]
+                    nugget[d, hr_idx, height_idx] = OK.variogram_model_parameters[2]
 
+        # plt.figure()
+        # plt.hist(data.flatten(), bins=50)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#                 # choose variogram model based on cross validation test reslts
-#                 variogram_model = 'spherical'
-# 
-#                 os.system('echo starting variogram @' + str(dt.datetime.now()))
-# 
-#                 # Ordinary Kriging: 3.1.1 in pykrige documentation
-#                 # Function fails when given 2D arrays so pass in flattened 1D arrays of the 2D data.
-#                 OK = OrdinaryKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(),
-#                                      variogram_model=variogram_model, nlags=max_lags, weight=True, enable_plotting=True,) # verbose=True,enable_plotting=True,
-# 
-#                 os.system('echo made variogram @ '+str(dt.datetime.now()))
-# 
-#                 ax = plt.gca()
-#                 plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height=' + str(mod_data['level_height'][height_idx]) + 'm')
-#                 ax.set_xlabel('Distance [km]')
-#                 ax.set_ylabel('Semi-variance')
-#                 savesubdir = variogramsavedir + hr.strftime('%Y-%m-%d') + '/'
-#                 savename = hr.strftime('%Y-%m-%d_%H') +  '_{:05.0f}'.format(mod_data['level_height'][height_idx]) + 'm_variogram'
-#                 
-#                 if os.path.exists(savesubdir) == False:
-#                     os.mkdir(savesubdir)
-#                 plt.savefig(savesubdir + savename)
-#                 plt.close()
-# 
-#                 os.system('echo saved and closed variogram @'+str(dt.datetime.now()))
-# 
-#                 # # look at variogram_model_parameters to find the nugget, sill etc.
-#                 # #! list order varies, depending on the variogram_model used!
-#                 # #! gives back partial sill (full sill - nugget), not the full sill
-#                 if variogram_model == 'spherical':
-#                     sill[d, hr_idx, height_idx] = OK.variogram_model_parameters[0]
-#                     v_range[d, hr_idx, height_idx] = OK.variogram_model_parameters[1]
-#                     nugget[d, hr_idx, height_idx] = OK.variogram_model_parameters[2]
-
-#         # plt.figure()
-#         # plt.hist(data.flatten(), bins=50)
-# 
-#         # np.argsort(U_mean)
-#         # np.array(U_mean)[np.argsort(U_mean)]
+        # np.argsort(U_mean)
+        # np.array(U_mean)[np.argsort(U_mean)]
 
         # ==============================================================================
         # Plotting
@@ -596,24 +399,17 @@ if __name__ == '__main__':
         # this day's variables to plot
         day_time = mod_data['time'][:-1]
         day_height = mod_data['level_height'][height_range]
-        day_sill_data = sill[:, height_range]
-        day_range_data = v_range[:, height_range]
-        U_str = '{:.4}'.format(np.nanmean(U_mean))
-        aer_str = '{:.4}'.format(np.nanmean(aer_mean))
-        rh_str = '{:.4}'.format(np.nanmean(rh_mean))
+        day_sill_data = sill[d, :, height_range]
+        day_range_data = v_range[d, :, height_range]
+        U_str = '{:.4}'.format(U_mean[d])
+        aer_str = '{:.4}'.format(aer_mean[d])
+        rh_str = '{:.4}'.format(rh_mean[d])
         savefigdir = twodsilledir
-
-        fig, ax = twoD_range_one_day(day_time, day_height, day_range_data, mlh_obs, data_var, savefigdir, U_str, aer_str, rh_str)
 
         # plot 2D range and sill for today
         fig, ax = twoD_sill_one_day(day_time, day_height, day_sill_data, mlh_obs, data_var, savefigdir, U_str, aer_str, rh_str)
 
-        # fast npy save
-        npy_savedict = {'range': range, 'sill': sill, 'nugget': nugget, 'day': day, 'time': day_time, 
-                       'U_mean': U_mean, 'aer_mean': aer_mean, 'rh_mean': rh_mean}
-        npy_savename = 'variogram_data_'+day.strftime('%Y-%m-%d')+'.npy'
-        np.save(npy_savedir+npy_savename, npy_savedict)
-
+        #fig, ax = twoD_range_one_day(day_time, day_height, day_range_data, mlh_obs, data_var, savefigdir, U_str, aer_str, rh_str)
 
     # # multiple days
     # time = [i.hour for i in mod_data['time'][:-1]]
