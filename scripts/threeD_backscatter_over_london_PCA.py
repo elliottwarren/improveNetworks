@@ -7,13 +7,19 @@ Uses following website as a guide for PCA:
 https://machinelearningmastery.com/calculate-principal-component-analysis-scratch-python/
 """
 
+# workaround while PYTHONPATH plays up on MO machine
 import sys
-sys.path.append('C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/scripts')
+#sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts')
+sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/Utils') #aerFO
+sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ellUtils') # general utils
+sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ceilUtils') # ceil utils
+
+#sys.path.append('C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/scripts')
 
 import numpy as np
 
-#import matplotlib
-#matplotlib.use('Agg')
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cbook as cbook
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -24,11 +30,16 @@ from scipy import stats
 from copy import deepcopy
 import sunrise
 
-import ellUtils.ellUtils as eu
-import ceilUtils.ceilUtils as ceil
+# import ellUtils.ellUtils as eu
+# import ceilUtils.ceilUtils as ceil
+# from forward_operator import FOUtils as FO
+# from forward_operator import FOconstants as FOcon
 
-from forward_operator import FOUtils as FO
-from forward_operator import FOconstants as FOcon
+import ellUtils as eu
+import ceilUtils as ceil
+import FOUtils as FO
+import FOconstants as FOcon
+# from Utils import FOconstants as FOcon
 
 from threeD_backscatter_over_london import rotate_lon_lat_2D
 
@@ -143,7 +154,11 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
         return mod_data_day
 
     # d = 0; day = days_iterate[0]
+    
     for d, day in enumerate(days_iterate):
+
+        statement= 'extracting ' + str(d) + ' ' + day.strftime('%Y%m%d')
+        os.system('echo '+statement)
 
         # read in all the data, across all hours and days, for one height
         mod_data_day = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, 905, Z=Z, metvars=True,
@@ -207,8 +222,10 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
 
     # calculate grid centre u and v winds from grid edges
     # will be needed for London model data :(
-    if model_type == 'LM':
-        raise ValueError('need to interpolate u, v and w winds onto the B-grid :(')
+    #if model_type == 'LM':
+        
+        #lin_interpolate_u_v_to_bgrid(mod_data)
+    #     raise ValueError('need to interpolate u, v and w winds onto the B-grid :(')
 
     return mod_data
 
@@ -548,6 +565,7 @@ def rotate_loadings_and_calc_scores(loadings, cov_data, eig_vals):
     return reordered_rot_loadings, reordered_rot_pcScores, perc_var_explained_ratio_rot
 
 # statistics
+
 def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars, ceil_metadata, height_i_label,
                                  topmeddir, botmeddir):
 
@@ -660,8 +678,8 @@ def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars, cei
                 top_x = top_x[:, :, lon_range]#.flatten()
                 bot_y = mod_data[var][lower_scores_idx, :, :]
                 bot_y = bot_y[:, :, lon_range]#.flatten()
-            else:
-                raise ValueError('Need to define how to subsample top_x and bot_y from different model ([scores_idx, :, :])?')
+            #else:
+            #    raise ValueError('Need to define how to subsample top_x and bot_y from different model ([scores_idx, :, :])?')
 
             if var == 'backscatter':
                 top_x = np.log10(top_x)
@@ -759,6 +777,7 @@ def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars, cei
     return statistics_height, boxplot_stats_top, boxplot_stats_bot
 
 # Plotting
+
 def plot_corr_matrix_table(matrix, mattype, data_var, height_i_label):
     """
     Plot and save the data talbe for a correlation matrix
@@ -828,6 +847,7 @@ def plot_corr_matrix_table(matrix, mattype, data_var, height_i_label):
 #
 #     return
 #
+
 def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedir,
                        days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
                        perc_var_explained, matrix_type):
@@ -875,7 +895,7 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
 
     return
 
-def line_plot_exp_var_vs_EOF(perc_explained, height_i_label, days_iterate, expvarsavedir, matrix_type):
+def line_plot_exp_var_vs_EOF(peprc_explained, height_i_label, days_iterate, expvarsavedir, matrix_type):
     """Plot the accumulated explained variance across the kept EOFs"""
 
     #perc_explained_cumsum = np.cumsum(perc_explained)
@@ -893,6 +913,7 @@ def line_plot_exp_var_vs_EOF(perc_explained, height_i_label, days_iterate, expva
     return
 
 # reordered_rot_pcScores, days_iterate, rotPCscoresdir, 'rotPC'
+
 def line_plot_PCs_vs_days_iterate(scores, days_iterate, time, pcsavedir, pctype):
 
     """Plot the EOFs paired PCs, against the days_iterate (x axis)"""
@@ -962,91 +983,6 @@ def line_plot_PCs_vs_days_iterate(scores, days_iterate, time, pcsavedir, pctype)
 
     return
 
-def bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, barsavedir, height_i_label, lon_range):
-
-    # Bar chart
-    for var in met_vars:
-        fig = plt.figure()
-
-        top_med = []
-        bot_med = []
-        top_75 = []
-        top_25 = []
-        bot_75 = []
-        bot_25 = []
-        mw_p = []
-        for i in range(reordered_rot_pcScores.shape[-1]):
-            pc_i = reordered_rot_pcScores[:, i]
-            pc_i_name = 'rotPC' + str(i + 1)  # do not start at 0...
-            # stats for this iteration
-            stats_j = stats_height[var][pc_i_name]
-
-            # gather meds
-            top_med += [stats_j['median_top']]
-            bot_med += [stats_j['median_bot']]
-
-            # get values above and below median for yerr plotting
-            top_75 += [stats_j['75thpct_top'] - stats_j['median_top']]
-            top_25 += [stats_j['median_top'] - stats_j['25thpct_top']]
-            bot_75 += [stats_j['75thpct_bot'] - stats_j['median_bot']]
-            bot_25 += [stats_j['median_bot'] - stats_j['25thpct_bot']]
-
-            # top_75 += [stats_j['75thpct_top']]
-            # top_25 += [stats_j['25thpct_top']]
-            # bot_75 += [stats_j['75thpct_bot']]
-            # bot_25 += [stats_j['25thpct_bot']]
-
-            # Welch t test
-            if stats_j['Mann-Whitney-U_p'] < 0.05:
-                sig = '*'
-            else:
-                sig = ''
-            mw_p += [sig]
-
-        # bar charts
-        x = np.arange(reordered_rot_pcScores.shape[-1]) + 1  # start at PC1 not PC0...
-        width = 0.3
-        # yerr needs [value below, value above], so
-        plt.bar(x - (width / 2), top_med, yerr=np.array([np.array(top_25), top_75]), width=width, color='blue',
-                align='center', label='top')
-        plt.bar(x + (width / 2), bot_med, yerr=np.array([np.array(bot_25), bot_75]), width=width, color='green',
-                align='center', label='bottom')
-
-        # median and IQR
-        plt.axhline(np.median(mod_data[var][:, :, lon_range]), linestyle='--', color='black')
-        plt.axhline(np.percentile(mod_data[var][:, :, lon_range], 75), linestyle='-.', color='black', alpha=0.5)
-        plt.axhline(np.percentile(mod_data[var][:, :, lon_range], 25), linestyle='-.', color='black', alpha=0.5)
-
-        plt.ylabel(var)
-        plt.xlabel('PC')
-        plt.suptitle('median')
-        plt.legend()
-        ax = plt.gca()
-
-        # # bottom limit - fast version
-        # a = np.min(np.array(top_med) + np.array(top_25))
-        # b = np.min(np.array(bot_med) + np.array(bot_25))
-        # lower_lim = np.min([a,b])
-        # lower_lim = lower_lim - (lower_lim/20.0) # remove 5% of it to buffer the lower axis
-        # ax.set_ylim(bottom=lower_lim)
-
-        # add sample size at the top of plot for each box and whiskers
-        # pos_t = np.arange(numBoxes) + 1
-        pos = np.arange(len(x)) + 1
-        ax = plt.gca()
-        top = ax.get_ylim()[1]
-        for tick, label in zip(range(len(pos)), ax.get_xticklabels()):
-            k = tick % 2
-            # ax.text(pos[tick], top - (top * 0.08), upperLabels[tick], # not AE
-            ax.text(pos[tick], top - (top * 0.1), mw_p[tick],  # AE
-                    horizontalalignment='center', size='x-small')
-
-        savename = barsavedir + 'median_' + var + '_' + height_i_label + '_rotPCs.png'
-        plt.savefig(savename)
-        plt.close(fig)
-
-    return
-
 def boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stats_height, barsavedir,
                   height_i_label, lon_range):
 
@@ -1110,7 +1046,10 @@ def boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stat
         plt.setp(bp['caps'], color=color)
         plt.setp(bp['medians'], color=color)
 
+        return
+
     # boxplot for each variable
+    
     for var in met_vars:
 
         # create stars to signifiy how statistically significant each test was
@@ -1135,9 +1074,7 @@ def boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stat
         if model_type == 'UKV':
             plt.axhline(np.percentile(mod_data[var][:, :, lon_range], 75), linestyle='-.', linewidth=0.7, color='black', alpha=0.5)
             plt.axhline(np.percentile(mod_data[var][:, :, lon_range], 25), linestyle='-.', linewidth=0.7, color='black', alpha=0.5)
-        else:
-            raise ValueError('Need to specify which lon_range (if any) to use to plot axhline for boxplot if not UKV!')
-
+  
         # prettify, and correct xtick label and position
         plt.xticks(pos, pos)  # sets position and label
         plt.ylabel(var)
@@ -1180,8 +1117,6 @@ if __name__ == '__main__':
     #data_var = 'RH'
     #data_var = 'aerosol_for_visibility'
 
-    lon_range = np.arange(26, 65) # only London area (right hand side of larger domain)
-
     # save?
     numpy_save = True
 
@@ -1194,15 +1129,20 @@ if __name__ == '__main__':
     # ------------------
 
     # which modelled data to read in
-    model_type = 'UKV'
-    res = FOcon.model_resolution[model_type]
+#     model_type = 'UKV'
+    model_type = 'LM'
+    #res = FOcon.model_resolution[model_type]
     Z='21'
 
     # directories
-    maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-    datadir = maindir + 'data/'
-    ceilDatadir = datadir + 'L1/'
-    modDatadir = datadir + model_type + '/'
+#     maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
+    maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
+    # datadir = maindir + 'data/'
+    datadir = '/spice/scratch/ewarren/LM/full_forecast/'
+    # ceilDatadir = datadir + 'L1/'
+#     modDatadir = datadir + model_type + '/'
+    metadatadir = '/data/jcmm1/ewarren/metadata/'
+    modDatadir = datadir
     pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
     savedir = pcsubsampledir + data_var+'/'
     topmeddir = savedir + 'top_median/'
@@ -1215,16 +1155,21 @@ if __name__ == '__main__':
     rotexpvarsavedir = savedir + 'rot_explained_variance/'
     boxsavedir = savedir + 'boxplots/'
     corrmatsavedir = savedir + 'corrMatrix/'
-    npysavedir = datadir + 'npy/PCA/'
+    npysavedir = '/data/jcmm1/ewarren/npy/'
 
     # intial test case
     # daystr = ['20180406']
     # daystr = ['20180903'] # low wind speed day (2.62 m/s)
     # current set (missing 20180215 and 20181101) # 08-03
-    daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
+    daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507', # all days
               '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
               '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
               '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
+    
+#    daystr = ['20180406','20180418','20180419','20180420']
+    
+    #daystr = ['20180406','20180418']    
+    
     days_iterate = eu.dateList_to_datetime(daystr)
     # a = [i.strftime('%Y%j') for i in days_iterate]
     # '\' \''.join(a)
@@ -1264,20 +1209,27 @@ if __name__ == '__main__':
 
     # ceilometer list to use
     ceilsitefile = 'improveNetworksCeils.csv'
-    ceil_metadata = ceil.read_ceil_metadata(datadir, ceilsitefile)
+    ceil_metadata = ceil.read_ceil_metadata(metadatadir, ceilsitefile)
 
-    #height_idx = 7
+    #height_idx = 0
+    for height_idx in [14]: #np.arange(24):# [0]: #np.arange(24): # max 30 -> ~ 3.1km = too high! v. low aerosol; [8] = 325 m; [23] = 2075 m
 
-    for height_idx in np.arange(24):# [0]: #np.arange(24): # max 30 -> ~ 3.1km = too high! v. low aerosol; [8] = 325 m; [23] = 2075 m
+        #print 'Reading in data...'
 
         # read in model data and subsample using different **kwargs
+        # Can accept lon_range=lon_range as an argument if >1microgram cut off is being used
         if pcsubsample == '11-18_hr_range':
             mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx,
-                                                         lon_range=lon_range, hr_range=[11,18])
+                                                         hr_range=[11,18])
         elif (pcsubsample == 'daytime') | (pcsubsample == 'nighttime'):
             mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx,
-                                                         lon_range=lon_range, subsample=pcsubsample)
-        # mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx)
+                                                         subsample=pcsubsample)
+
+        if model_type == 'UKV':
+            lon_range = np.arange(26, 65) # only London area (right hand side of larger domain)
+        elif model_type == 'LM':
+            lon_range = np.arange(mod_data['longitude'].shape[0])
+
 
         # extract out the height for this level
         height_idx_str = str(height_idx)
@@ -1301,14 +1253,16 @@ if __name__ == '__main__':
                 data = np.log10(mod_data[data_var][:, :, lon_range])
             else:# (data_var == 'air_temperature') | (data_var == 'RH'):
                 data = mod_data[data_var][:, :, lon_range]
-            #else:
-            #    raise ValueError('need to specify how to extract data if not backsatter')
-        else:
-            raise ValueError('Need to change the data extract to deal with other models than UKV, not([:, :, long_range])!')
+        else: # LM
+            if data_var == 'backscatter':
+                data = np.log10(mod_data[data_var])
+            else:# (data_var == 'air_temperature') | (data_var == 'RH'):
+                data = mod_data[data_var]
 
         # ==============================================================================
         # PCA
         # ==============================================================================
+        os.system('echo beginning data processing...')
 
         # get shape dimensions
         lat_shape = int(data.shape[1])
@@ -1329,14 +1283,18 @@ if __name__ == '__main__':
         M = np.mean(data.T, axis=1)
         data_m = data - M
         data_m_norm = data_m / np.std(data.T, axis=1)
+        os.system('echo start calc cov matrix...')
         cov_data = np.cov(data_m.T) # comaprison shows this, rot loadings and PCs mathces SPSS ...
         # pseduo inverse as the cov_matrix is too ill-conditioned for a normal inv.
+        os.system('echo start invert cov matrix...')
         cov_inv = pinv(cov_data)
         # cov_data_normed = np.cov(data_m_norm.T)
         #corr_data = np.corrcoef(data_m.T)
 
         # carry out Principal Component Analaysis
         # loadings = eig_vecs * sqrt(eig_values)
+        os.system('echo beginning PCA...')
+
         eig_vecs_keep, eig_vals, pcScores, loadings, perc_var_explained_unrot_keep = pca_analysis(data_m, cov_data, cov_inv)
 
         # store the kept loadings, for this height for later saving, and subsequent cluster analysis in another script
@@ -1344,6 +1302,7 @@ if __name__ == '__main__':
 
         # If there is more than 1 set of EOFs, PCs and loadings - VARIMAX rotate
         # Else, set the 'rotated' component equal to the unrotated component.
+        os.system('echo beginning VARIMAX rotation...')
         if loadings.shape[-1] > 1:
             # rotate the loadings to spread out the eplained variance between all the kept vectors
             reordered_rot_loadings, reordered_rot_pcScores, perc_var_explained_ratio_rot = \
@@ -1356,6 +1315,8 @@ if __name__ == '__main__':
         # ==============================================================================
         # Calculate and save statistics
         # ==============================================================================
+
+        os.system('echo beginning statistic calculations...')
 
         # met variables to calculate statistics with
         met_vars = mod_data.keys()
@@ -1397,6 +1358,7 @@ if __name__ == '__main__':
         # ---------------------------------------------------------
         # Plotting
         # ---------------------------------------------------------
+        os.system('echo beginning plotting...')
 
         # aspect ratio for the map plots
         aspectRatio = float(mod_data['longitude'].shape[0]) / float(mod_data['latitude'].shape[0])
@@ -1433,10 +1395,13 @@ if __name__ == '__main__':
         # create bar charts - one for each var, for each height - showing all PCs - outdated and did work well
         # for air temp or pressure
         # bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, barsavedir, height_i_label, lon_range)
+        os.system('echo finished '+day.strftime('%Y%m%d')+'!')
 
     # ---------------------------------------------------------
     # Save stats
     # ---------------------------------------------------------
+
+    os.system('echo saving statistics to numpy array')
 
     # save statistics
     npysavedir_statistics_fullpath = npysavedir+data_var+'_'+pcsubsample+'_statistics.npy'
@@ -1448,4 +1413,5 @@ if __name__ == '__main__':
                  'longitude': lons, 'latitude': lats}
     np.save(npysavedir_loadings_fullpath, save_dict)
 
+    os.system('echo END PROGRAM')
     print 'END PROGRAM'
