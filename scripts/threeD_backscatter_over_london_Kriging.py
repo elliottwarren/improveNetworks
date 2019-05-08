@@ -14,6 +14,8 @@ sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/Utils
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ellUtils') # general utils
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ceilUtils') # ceil utils
 
+import matplotlib
+#matplotlib.use('Agg') # needed as SPICE does not have a monitor and will crash otherwise if plotting is used
 
 
 import numpy as np
@@ -24,6 +26,34 @@ import matplotlib.colors as colors
 import os
 import math
 import datetime as dt
+
+from threeD_backscatter_over_london_by_hour import all_semivariance
+#import threeD_backscatter_over_london_by_hour as td
+
+import dask.multiprocessing
+import dask
+#import dask.array as da
+from dask import compute, delayed, visualize
+# setting dask.config does not work as it is only present in the developers version
+#    apparently: https://github.com/dask/dask/issues/3531
+# dask.config.set(scheduler='processes') # doesn't work
+
+#import multiprocessing
+#os.system('echo multiprocessing.cpu_count()')
+#c = str(multiprocessing.cpu_count())
+#os.system('echo '+ c)
+#print multiprocessing.cpu_count()
+#print''
+
+# import ellUtils as eu
+# import ceilUtils as ceil
+# from Utils import FOUtils as FO
+# from Utils import FOconstants as FOcon
+
+import ellUtils as eu
+import ceilUtils as ceil
+import FOUtils as FO
+import FOconstants as FOcon
 
 if sys.platform == 'win32':
     from ellUtils import ellUtils as eu
@@ -202,7 +232,10 @@ if __name__ == '__main__':
 
     # save?
     numpy_save = True
-
+    
+    # debugging? - shrink data size later on
+    test_mode = True
+    
     # ------------------
 
     # which modelled data to read in
@@ -285,6 +318,23 @@ if __name__ == '__main__':
         # .shape = (hour, height, lat, lon)
         mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, 905, allvars=True)
 
+        # reduce domain size to match UKV extract
+        # domain edges found using eu.nearest compared to the UKV extract domain edges
+        if model_type == 'UKV':
+            mod_data['longitude'] = mod_data['longitude'][lon_range]
+            mod_data[data_var] = mod_data[data_var][:, :, :, lon_range]
+            mod_data['u_wind'] = mod_data['u_wind'][:, :, :, lon_range]
+            mod_data['v_wind'] = mod_data['v_wind'][:, :, :, lon_range]
+            mod_data['RH'] = mod_data['RH'][:, :, :, lon_range]
+            mod_data['aerosol_for_visibility'] = mod_data['aerosol_for_visibility'][:, :, :, lon_range]
+            
+        # shrink data size to help with debugging
+        if (model_type == 'LM') & (test_mode == True):
+            mod_data['longitude'] = mod_data['longitude'][:50]
+            mod_data['latitude'] = mod_data['latitude'][:50]
+            mod_data[data_var] = mod_data[data_var][:, :, :50, :50]
+
+        # testing
         # rotate the lon and lats onto a normal geodetic grid (WGS84) [degrees] and expands lon and lat by 1 so it can
         # be used in plt.pcolormesh() which wants corner edges not center points
         # rotLon2d_deg, rotLat2d_deg = rotate_lon_lat_2D(mod_data['longitude'], mod_data['latitude'], model_type)
@@ -358,6 +408,68 @@ if __name__ == '__main__':
                 #         print(' - {} : {}'.format(key, estimator.cv_results_[key]))
 
 
+
+                # Create the semivariance and lags
+                # appending dmax += 0.001 ensure maximum bin is included
+                nlags = np.max(list(data.shape))
+                dmin = unrotLat2d[1,0] # equidistant grid, therefore the first box across ([1,0]) will have the minimum distance 
+                dmax = np.sqrt((np.amax(unrotLat2d)**2) + (np.amax(unrotLon2d)**2)) # [km] - diag distance to opposite corner of domain
+                
+                dd = (dmax - dmin) / nlags # average nlag spacing
+                bins = [dmin + n * dd for n in range(nlags)]
+                dmax += 0.001 
+                bins.append(dmax)
+                
+                # load in lags to limit computation expense (save if needed)
+                #lags = np.load(npy_savedir + 'lags/'+model_type+'_lags.npy')
+                #np.save(npy_savedir + 'lags/'+model_type+'_lags.npy', lags_full)
+                
+                
+                # set up semivariance array ready
+                #semivariance = np.zeros(nlags) # semivariance within each lag bin
+                #semivariance[:] = np.nan
+                
+                # sample size for each lag. Start at 0 and add them up as more idx pairs are found
+                #m = np.zeros(nlags)
+                
+                # maximum idx position for each dimension
+                idx_max = [j - 1 for j in data.shape]
+                
+                # create euclidean distance matrix (from point [0,0])
+                # only creates distances for one quadrant (top right) effectively
+                distance = np.sqrt((unrotLat2d**2) + (unrotLon2d**2))
+                
+#                 plt.figure()
+#                 plt.pcolormesh(distance)
+#                 plt.colorbar()
+#                 plt.show()
+                 
+                os.system('echo calculating semivariance @ '+str(dt.datetime.now()))
+                
+                # prepare all_semicariance() inputs by making them dask objects
+                #    hopefully make the dask delayed processes work better...
+                # data = 
+                
+                semivariance, m, lags = all_semivariance(bins, data, distance, idx_max)
+                
+                #print 'semivariance_full'
+                #print semivariance_full
+                #print 'm_full'
+                #print m_full
+                
+                #fig = d.visualise()
+                #plt.savefig(daskmapsavedir + 'debugging_map.png')
+                #a = d.compute()
+                
+                #print'\n\n\n\n\n'
+                
+            
+                os.system('echo about to make the variogram @ '+str(dt.datetime.now()))
+                
+                if (height_idx == 0) & (hr_idx == 0):
+                    print 'lags:'
+                    print lags
+                
                 # choose variogram model based on cross validation test reslts
                 variogram_model = 'spherical'
 
