@@ -6,20 +6,24 @@ Created by Elliott Warren Fri 23 Nov 2018
 """
 
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
+#import matplotlib
+#matplotlib.use('Agg')
+#import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import matplotlib.cm as cm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import os
 
-import ellUtils.ellUtils as eu
-import ceilUtils.ceilUtils as ceil
+# import ellUtils.ellUtils as eu
+# import ceilUtils.ceilUtils as ceil
+# from forward_operator import FOUtils as FO
+# from forward_operator import FOconstants as FOcon
 
-from forward_operator import FOUtils as FO
-from forward_operator import FOconstants as FOcon
+import ellUtils as eu
+import ceilUtils as ceil
+import FOUtils as FO
+import FOconstants as FOcon
 
 def calculate_corner_locations(coord):
 
@@ -133,11 +137,13 @@ def rotate_lon_lat_2D(longitude, latitude, model_type, corner_locs=False):
     # rotlat2D needs to be transposed as rows need to be latitude, and columns longitude.
     # np.transpose() does transpose in the correct direction:
     # compare mod_all_data['latitude'][n] with rotlat2D[n,:]
+    
     rotlon2D = np.array([longitude] * latitude.shape[0])
     rotlat2D = np.transpose(np.array([latitude] * longitude.shape[0]))
 
     # Get model transformation object (ll) to unrotate the model data later
-    if (model_type == 'UKV') | (model_type == '55m'):
+    # Have checked rotation is appropriate for all models below
+    if (model_type == 'UKV') | (model_type == '55m') | (model_type == 'LM'):
         rotpole = (iris.coord_systems.RotatedGeogCS(37.5, 177.5, ellipsoid=iris.coord_systems.GeogCS(
             6371229.0))).as_cartopy_crs()  # rot grid
         rotpole2 = ccrs.RotatedPole(pole_longitude=177.5, pole_latitude=37.5)
