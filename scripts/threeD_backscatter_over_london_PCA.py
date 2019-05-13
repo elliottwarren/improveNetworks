@@ -7,6 +7,8 @@ Uses following website as a guide for PCA:
 https://machinelearningmastery.com/calculate-principal-component-analysis-scratch-python/
 """
 
+#SBATCH --partition=rhel6
+
 # workaround while PYTHONPATH plays up on MO machine
 import sys
 #sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts')
@@ -1170,13 +1172,13 @@ if __name__ == '__main__':
     npysavedir = '/data/jcmm1/ewarren/npy/'
 
     # intial test case
-    daystr = ['20180406']
+    #daystr = ['20180406']
     # daystr = ['20180903'] # low wind speed day (2.62 m/s)
     # current set (missing 20180215 and 20181101) # 08-03
-    # daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507', # all days
-    #           '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
-    #           '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
-    #           '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
+    daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507', # all days
+              '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
+              '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
+              '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
     
 #    daystr = ['20180406','20180418','20180419','20180420']
     
@@ -1437,8 +1439,8 @@ if __name__ == '__main__':
     # create bar charts - one for each var, for each height - showing all PCs - outdated and did work well
     # for air temp or pressure
     # bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, barsavedir, height_i_label, lon_range)
-    os.system('echo finished '+day.strftime('%Y%m%d')+'!')
-    os.system('echo '+str(dt.datetime.now() - script_start))
+    #os.system('echo finished '+day.strftime('%Y%m%d')+'!')
+    #os.system('echo '+str(dt.datetime.now() - script_start))
 
     # ---------------------------------------------------------
     # Save stats
