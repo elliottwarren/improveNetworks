@@ -6,6 +6,11 @@ Created on 4 April 2019
 Edited by Elliott Warren: Thurs 25 Apr 2018
 """
 
+# workaround while PYTHONPATH plays up on MO machine
+import sys
+#sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts')
+sys.path.append('/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/scripts')
+
 import iris
 import matplotlib.pyplot as plt
 import iris.plot as iplt
@@ -21,8 +26,8 @@ if __name__ == '__main__':
 
     # what to plot? Surface types of orography? (Come in different files)
     # data_to_plot = 'surface type'
-    data_to_plot = 'orography'
-    # data_to_plot = 'murk_aer'
+    #data_to_plot = 'orography'
+    data_to_plot = 'murk_aer'
 
     model_type = 'LM'
 
@@ -42,12 +47,12 @@ if __name__ == '__main__':
         maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
         datadir = maindir + 'data/UKV/'
         npydatadir = maindir + '/data/npy/'
-        savedir = maindir + 'figures/model_ancillaries/'
+        savedir = maindir + 'figures/model_ancillaries/'+model_type+'/'
     elif model_type == 'LM': # on MO machine
         maindir = '/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
-        datadir = '/data/jcmm1/ewarren/ancillaries/'
+        datadir = '/data/jcmm1/ewarren/ancillaries/'+data_to_plot+'/'+model_type+'/'
         #npydatadir = maindir + '/data/npy/'
-        savedir = maindir + 'figures/ancillaries/'
+        savedir = maindir + 'figures/ancillaries/'+model_type+'/'
 
     # Model Resolution
     if model_type == 'UKV':
@@ -68,11 +73,11 @@ if __name__ == '__main__':
         spacing = 0.003 # checked
         # checked that it perfectly matches LM data extract (setup is different to UKV orog_con due to
         #    number precision issues.
-        orog_con = iris.Constraint(name='surface_altitude',
+        con = iris.Constraint(name='surface_altitude',
                                    coord_values={
                                        'grid_latitude': lambda cell: -1.214 - spacing < cell < -0.776,
                                        'grid_longitude': lambda cell: 1.21 < cell < 1.732 + spacing})
-# name='surface_altitude',
+    # name='surface_altitude',
     # UK_lon_constraint =
     # aspect ratio for plotting
     aspectRatio = 1.8571428571428572  # from my other plots
@@ -126,14 +131,31 @@ if __name__ == '__main__':
         temp_cmap = plt.get_cmap('jet')
 
         # load data
-        murk_aer = np.load(npydatadir + model_type + '_murk_ancillaries.npy').flatten()[0]
+        if model_type == 'UKV':
+            murk_aer = np.load(npydatadir + model_type + '_murk_ancillaries.npy').flatten()[0]
+        elif model_type == 'LM':
+
+            spacing = 0.003  # checked
+            # checked that it perfectly matches LM data extract (setup is different to UKV orog_con due to
+            #    number precision issues.
+            con = iris.Constraint(coord_values={
+                                      'grid_latitude': lambda cell: -1.214 - spacing < cell < -0.776,
+                                      'grid_longitude': lambda cell: 361.21 < cell < 361.732 + spacing})
+
+            murk_aer_all = iris.load_cube(datadir + 'qrclim.murk_L70')
+            murk_aer = murk_aer_all.extract(con)
+
+        rot_lats = murk_aer.coord('grid_latitude').points
+        rot_lons = murk_aer.coord('grid_longitude').points - 360.0 # remove 360 as
+        lons, lats = rotate_lon_lat_2D(rot_lons, rot_lats, model_type)
+
         for height_idx in np.arange(8):
-            #height_idx = 10
+            #height_idx = 4# 10
             height = murk_aer.coord('level_height').points[height_idx]
-            month_idx = 6
+            month_idx = 0
             murk_data = murk_aer.data[month_idx, height_idx, :, :]
             plt.subplots(1, 1, figsize=(4.5 * aspectRatio, 4.5))
-            im = plt.pcolormesh(murk_data, cmap=temp_cmap, vmin=0, vmax=0.18)
+            im = plt.pcolormesh(lons, lats, murk_data, cmap=temp_cmap, vmin=0, vmax=0.18)
             plt.colorbar(im, orientation='vertical')
             #plt.gca().coastlines('10m')
             plt.title('murk_aer')
