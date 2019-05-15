@@ -146,7 +146,7 @@ if __name__ == '__main__':
             murk_aer = murk_aer_all.extract(con)
 
         rot_lats = murk_aer.coord('grid_latitude').points
-        rot_lons = murk_aer.coord('grid_longitude').points - 360.0 # remove 360 as
+        rot_lons = murk_aer.coord('grid_longitude').points# - 360.0 - removing 360 has no real effect on rotation
         lons, lats = rotate_lon_lat_2D(rot_lons, rot_lats, model_type)
 
         for height_idx in np.arange(8):
