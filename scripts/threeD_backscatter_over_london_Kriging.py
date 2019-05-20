@@ -27,7 +27,7 @@ import os
 import math
 import datetime as dt
 
-from threeD_backscatter_over_london_by_hour import all_semivariance
+#from threeD_backscatter_over_london_by_hour import all_semivariance
 #import threeD_backscatter_over_london_by_hour as td
 
 import dask.multiprocessing
@@ -45,35 +45,23 @@ from dask import compute, delayed, visualize
 #print multiprocessing.cpu_count()
 #print''
 
+from ellUtils import ellUtils as eu
+from ceilUtils import ceilUtils as ceil
+from forward_operator import FOUtils as FO
+from forward_operator import FOconstants as FOcon
+
 # import ellUtils as eu
 # import ceilUtils as ceil
 # from Utils import FOUtils as FO
 # from Utils import FOconstants as FOcon
 
-import ellUtils as eu
-import ceilUtils as ceil
-import FOUtils as FO
-import FOconstants as FOcon
-
-if sys.platform == 'win32':
-    from ellUtils import ellUtils as eu
-    from ceilUtils import ceilUtils as ceil
-    from forward_operator import FOUtils as FO
-    from forward_operator import FOconstants as FOcon
-else:
-    import ellUtils as eu
-    import ceilUtils as ceil
-    from Utils import FOUtils as FO
-    from Utils import FOconstants as FOcon
-
 from pykrige.ok import OrdinaryKriging
 # from pykrige.uk import UniversalKriging
 # from pykrige.ok3d import OrdinaryKriging3D
-# from pykrige.rk import Krige
-# from pykrige.compat import GridSearchCV
+from pykrige.rk import Krige
+from pykrige.compat import GridSearchCV
 
 # Kriging Doc: https://media.readthedocs.org/pdf/pykrige/latest/pykrige.pdf
-
 
 
 # great circle formula
@@ -226,9 +214,10 @@ if __name__ == '__main__':
     # data variable to plot
     data_var = 'backscatter'
     # data_var = 'RH'
-
-    height_range = np.arange(0,30) # only first set of heights
-    lon_range = np.arange(30, 65) # only London area (right hand side of larger domain -35:
+    # <= ~2000 m - same as PCA heights
+    height_range = np.arange(0, 24)
+    # N-S extract over central London for UKV, given larger domain (361.409 to 361.50348 in rotated space)
+    lon_range = np.arange(40, 48)
 
     # save?
     numpy_save = True
@@ -285,15 +274,15 @@ if __name__ == '__main__':
     ceil_metadata = ceil.read_ceil_metadata(datadir, ceilsitefile)
 
     # empty arrays to fill  (day, hour, height)
-    sill = np.empty((len(days_iterate), 24, 41))
+    sill = np.empty((len(days_iterate), 24, len(height_range)))
     sill[:] = np.nan
 
     # empty arrays to fill  (day, hour, height)
-    v_range = np.empty((len(days_iterate), 24, 41))
+    v_range = np.empty((len(days_iterate), 24, len(height_range)))
     v_range[:] = np.nan
 
     # empty arrays to fill  (day, hour, height)
-    nugget = np.empty((len(days_iterate), 24, 41))
+    nugget = np.empty((len(days_iterate), 24, len(height_range)))
     nugget[:] = np.nan
 
     U_mean = np.empty((len(days_iterate)))
@@ -340,15 +329,16 @@ if __name__ == '__main__':
         # rotLon2d_deg, rotLat2d_deg = rotate_lon_lat_2D(mod_data['longitude'], mod_data['latitude'], model_type)
 
         # convert lons and lats to distance [km] from the bottom left corner of the grid
-        unrotLon2d, unrotLat2d, unrotLon1d, unrotLat1d= convert_deg_to_km(mod_data['longitude'][lon_range], mod_data['latitude'])
+        # unrotLon2d, unrotLat2d, unrotLon1d, unrotLat1d= convert_deg_to_km(mod_data['longitude'][lon_range], mod_data['latitude'])
+        unrotLon2d, unrotLat2d, unrotLon1d, unrotLat1d= convert_deg_to_km(mod_data['longitude'], mod_data['latitude'])
 
         # find important days (low wind, high aerosol
         # U wind from ground to 955 m - try to find day with lowest wind values (more local source emissions)
         # alternative - try when murk was high!
-        U = np.sqrt((mod_data['u_wind'][:, :16, :, :]**2.0) + (mod_data['v_wind'][:, :16, :, :]**2.0))
+        U = np.sqrt((mod_data['u_wind']**2.0) + (mod_data['v_wind']**2.0))
         U_mean[d] = np.nanmean(U)
-        aer_mean[d] = np.nanmean(mod_data['aerosol_for_visibility'][:, :16, :, :])
-        rh_mean[d] = np.nanmean(mod_data['RH'][:, :16, :, :])
+        aer_mean[d] = np.nanmean(mod_data['aerosol_for_visibility'])
+        rh_mean[d] = np.nanmean(mod_data['RH'])
         # read in MLH data
         mlh_obs = ceil.read_all_ceils(day, site_bsc, ceilDatadir, 'MLH', timeMatch=time_match)
 
@@ -364,111 +354,49 @@ if __name__ == '__main__':
                 # extract 2D cross section for this time
                 # just London area
                 if data_var == 'backscatter':# or
-                    data = np.log10(mod_data[data_var][hr_idx, height_idx, :, lon_range]) # [-35:]
+                    data = np.log10(mod_data[data_var][hr_idx, height_idx, :, :])
                     #print 'data logged'
                 elif data_var == 'specific_humidity':
-                    data = np.log10(mod_data[data_var][hr_idx, height_idx, :, lon_range]*1e3) # [g kg-1]
+                    data = np.log10(mod_data[data_var][hr_idx, height_idx, :, :]*1e3) # [g kg-1]
                 else:
-                    data = mod_data[data_var][hr_idx, height_idx, :, lon_range]
+                    data = mod_data[data_var][hr_idx, height_idx, :, :]
 
                 #ToDo Find best model to fit on the variogram, then pass best model into the main OrdinaryKriging() function
                 # use the kriging guide to help with this
                 #ToDo Use OK.update_variogram_model to save computational resources
 
-                # # test which model type to fit to the data using cross validation
-                # # PyKrige documentation 4.1: Krige CV
-                # param_dict = {"method": ["ordinary"],
-                #               "variogram_model": ["linear", "power", "spherical"],
-                #               "nlags": [20],
-                #               # "weight": [True, False]
-                #               }
-                #
-                # estimator = GridSearchCV(Krige(), param_dict, verbose=True)
+                # test which model type to fit to the data using cross validation
+                # PyKrige documentation 4.1: Krige CV
+                param_dict = {"method": ["ordinary"],
+                              "variogram_model": ["linear", "power", "spherical"],
+                              "nlags": [20],
+                              # "weight": [True, False]
+                              }
 
-                # # data - needs to be X : array-like, shape = [n_samples, n_features]
-                # # Training vector, where n_samples is the number of samples and n_features is the number of features.
-                # # location [lat, lon]
-                # #! Note: import to make sure reshaped axis keep the data in the correct order so X_i(lon_i, lat_i) and not
-                # #   some random lon or lat point. Be careful when stacking and rotating - always do checks agains the
-                # #   original, input variable! e.g. check with y[30] = [lon[30,0], lat[30,0]]
-                # y = data.flatten()
-                # # data = [col0=lon, col1=lat]
-                # X = np.stack((unrotLon2d.flatten(), unrotLat2d.flatten()), axis=1)
-                #
-                # estimator.fit(X=X, y=y)
+                estimator = GridSearchCV(Krige(), param_dict, verbose=True)
 
-                # # print results
-                # if hasattr(estimator, 'best_score_'):
-                #     print('best_score R2 = {:.3f}'.format(estimator.best_score_))
-                #     print('best_params = ', estimator.best_params_)
-                #     print('\nCV results::')
-                # if hasattr(estimator, 'cv_results_'):
-                #     for key in ['mean_test_score', 'mean_train_score',
-                #                 'param_method', 'param_variogram_model']:
-                #         print(' - {} : {}'.format(key, estimator.cv_results_[key]))
+                # data - needs to be X : array-like, shape = [n_samples, n_features]
+                # Training vector, where n_samples is the number of samples and n_features is the number of features.
+                # location [lat, lon]
+                #! Note: import to make sure reshaped axis keep the data in the correct order so X_i(lon_i, lat_i) and not
+                #   some random lon or lat point. Be careful when stacking and rotating - always do checks agains the
+                #   original, input variable! e.g. check with y[30] = [lon[30,0], lat[30,0]]
+                y = data.flatten()
+                # data = [col0=lon, col1=lat]
+                X = np.stack((unrotLon2d.flatten(), unrotLat2d.flatten()), axis=1)
 
+                estimator.fit(X=X, y=y)
 
+                # print results
+                if hasattr(estimator, 'best_score_'):
+                    print('best_score R2 = {:.3f}'.format(estimator.best_score_))
+                    print('best_params = ', estimator.best_params_)
+                    print('\nCV results::')
+                if hasattr(estimator, 'cv_results_'):
+                    for key in ['mean_test_score', 'mean_train_score',
+                                'param_method', 'param_variogram_model']:
+                        print(' - {} : {}'.format(key, estimator.cv_results_[key]))
 
-                # Create the semivariance and lags
-                # appending dmax += 0.001 ensure maximum bin is included
-                nlags = np.max(list(data.shape))
-                dmin = unrotLat2d[1,0] # equidistant grid, therefore the first box across ([1,0]) will have the minimum distance 
-                dmax = np.sqrt((np.amax(unrotLat2d)**2) + (np.amax(unrotLon2d)**2)) # [km] - diag distance to opposite corner of domain
-                
-                dd = (dmax - dmin) / nlags # average nlag spacing
-                bins = [dmin + n * dd for n in range(nlags)]
-                dmax += 0.001 
-                bins.append(dmax)
-                
-                # load in lags to limit computation expense (save if needed)
-                #lags = np.load(npy_savedir + 'lags/'+model_type+'_lags.npy')
-                #np.save(npy_savedir + 'lags/'+model_type+'_lags.npy', lags_full)
-                
-                
-                # set up semivariance array ready
-                #semivariance = np.zeros(nlags) # semivariance within each lag bin
-                #semivariance[:] = np.nan
-                
-                # sample size for each lag. Start at 0 and add them up as more idx pairs are found
-                #m = np.zeros(nlags)
-                
-                # maximum idx position for each dimension
-                idx_max = [j - 1 for j in data.shape]
-                
-                # create euclidean distance matrix (from point [0,0])
-                # only creates distances for one quadrant (top right) effectively
-                distance = np.sqrt((unrotLat2d**2) + (unrotLon2d**2))
-                
-#                 plt.figure()
-#                 plt.pcolormesh(distance)
-#                 plt.colorbar()
-#                 plt.show()
-                 
-                os.system('echo calculating semivariance @ '+str(dt.datetime.now()))
-                
-                # prepare all_semicariance() inputs by making them dask objects
-                #    hopefully make the dask delayed processes work better...
-                # data = 
-                
-                semivariance, m, lags = all_semivariance(bins, data, distance, idx_max)
-                
-                #print 'semivariance_full'
-                #print semivariance_full
-                #print 'm_full'
-                #print m_full
-                
-                #fig = d.visualise()
-                #plt.savefig(daskmapsavedir + 'debugging_map.png')
-                #a = d.compute()
-                
-                #print'\n\n\n\n\n'
-                
-            
-                os.system('echo about to make the variogram @ '+str(dt.datetime.now()))
-                
-                if (height_idx == 0) & (hr_idx == 0):
-                    print 'lags:'
-                    print lags
                 
                 # choose variogram model based on cross validation test reslts
                 variogram_model = 'spherical'
@@ -535,19 +463,66 @@ if __name__ == '__main__':
 
     print 'END PROGRAM'
 
+    ## Trash code - kept here encase needed
 
-# # 3D kriging code (currently runs out of memory during...)
-# # testing for 3D kriging (only bot 10 levels):
-# # transpose them so they are the correcy shape:(lon, lat, height) = (35L, 65L, 41L)
-# rotlon3d = np.transpose(np.array([unrotLon2d] * 10), axes=[1, 2, 0])
-# rotlat3d = np.transpose(np.array([unrotLat2d] * 10), axes=[1, 2, 0])
-# rotheight3d = np.transpose(np.array([[mod_data['level_height'][:10]] * unrotLat2d.shape[0]] * unrotLat2d.shape[1]),
-#                            axes=[1, 2, 0])
-
-# # test 3D kriging (bottom 10 levels only)
-# data3d = np.transpose(np.log10(mod_data['backscatter'][t, :10, :, :]), axes=[1, 2, 0])
-
-# # Carry out the kriging process
-# OK3d = OrdinaryKriging3D(rotlon3d.flatten(), rotlat3d.flatten(), rotheight3d.flatten() / 1000.0,
-#                          data3d.flatten(), enable_plotting=True,
-#                          variogram_model='spherical', nlags=20, weight=True, verbose=True)  # verbose=True
+    # # Create the semivariance and lags
+    # # appending dmax += 0.001 ensure maximum bin is included
+    # nlags = np.max(list(data.shape))
+    # dmin = unrotLat2d[1, 0]  # equidistant grid, therefore the first box across ([1,0]) will have the minimum distance
+    # dmax = np.sqrt(
+    #     (np.amax(unrotLat2d) ** 2) + (np.amax(unrotLon2d) ** 2))  # [km] - diag distance to opposite corner of domain
+    #
+    # dd = (dmax - dmin) / nlags  # average nlag spacing
+    # bins = [dmin + n * dd for n in range(nlags)]
+    # dmax += 0.001
+    # bins.append(dmax)
+    #
+    # # load in lags to limit computation expense (save if needed)
+    # # lags = np.load(npy_savedir + 'lags/'+model_type+'_lags.npy')
+    # # np.save(npy_savedir + 'lags/'+model_type+'_lags.npy', lags_full)
+    #
+    #
+    # # set up semivariance array ready
+    # # semivariance = np.zeros(nlags) # semivariance within each lag bin
+    # # semivariance[:] = np.nan
+    #
+    # # sample size for each lag. Start at 0 and add them up as more idx pairs are found
+    # # m = np.zeros(nlags)
+    #
+    # # maximum idx position for each dimension
+    # idx_max = [j - 1 for j in data.shape]
+    #
+    # # create euclidean distance matrix (from point [0,0])
+    # # only creates distances for one quadrant (top right) effectively
+    # distance = np.sqrt((unrotLat2d ** 2) + (unrotLon2d ** 2))
+    #
+    # #                 plt.figure()
+    # #                 plt.pcolormesh(distance)
+    # #                 plt.colorbar()
+    # #                 plt.show()
+    #
+    # os.system('echo calculating semivariance @ ' + str(dt.datetime.now()))
+    #
+    # # prepare all_semicariance() inputs by making them dask objects
+    # #    hopefully make the dask delayed processes work better...
+    # # data =
+    #
+    # semivariance, m, lags = all_semivariance(bins, data, distance, idx_max)
+    #
+    # # print 'semivariance_full'
+    # # print semivariance_full
+    # # print 'm_full'
+    # # print m_full
+    #
+    # # fig = d.visualise()
+    # # plt.savefig(daskmapsavedir + 'debugging_map.png')
+    # # a = d.compute()
+    #
+    # # print'\n\n\n\n\n'
+    #
+    #
+    # os.system('echo about to make the variogram @ ' + str(dt.datetime.now()))
+    #
+    # if (height_idx == 0) & (hr_idx == 0):
+    #     print 'lags:'
+    #     print lags
