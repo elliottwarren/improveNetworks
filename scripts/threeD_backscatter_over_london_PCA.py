@@ -21,7 +21,7 @@ sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ceilU
 import numpy as np
 
 import matplotlib
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cbook as cbook
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -41,16 +41,16 @@ import time
 #    apparently: https://github.com/dask/dask/issues/3531
 #dask.config(num_workers=5)
 
-# import ellUtils.ellUtils as eu
-# import ceilUtils.ceilUtils as ceil
-# from forward_operator import FOUtils as FO
-# from forward_operator import FOconstants as FOcon
+import ellUtils.ellUtils as eu
+import ceilUtils.ceilUtils as ceil
+from forward_operator import FOUtils as FO
+from forward_operator import FOconstants as FOcon
 
-import ellUtils as eu
-import ceilUtils as ceil
-import FOUtils as FO
-import FOconstants as FOcon
-# from Utils import FOconstants as FOcon
+# import ellUtils as eu
+# import ceilUtils as ceil
+# import FOUtils as FO
+# import FOconstants as FOcon
+# # from Utils import FOconstants as FOcon
 
 from threeD_backscatter_over_london import rotate_lon_lat_2D
 
@@ -186,6 +186,7 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
         if mod_data_day['time'][-1].hour == 0: # if its actually hour 0 of the next day....
             # for key in ['aerosol_for_visibility', 'time', 'RH', 'backscatter']:
             for key in met_vars:
+                #print key
                 mod_data_day[key] = mod_data_day[key][:-1, ...]
 
         # extract out a time range from data?
@@ -1143,20 +1144,21 @@ if __name__ == '__main__':
     # ------------------
 
     # which modelled data to read in
-#     model_type = 'UKV'
-    model_type = 'LM'
+    model_type = 'UKV'
+#    model_type = 'LM'
     #res = FOcon.model_resolution[model_type]
     Z='21'
 
     # directories
-#     maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-    maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
-    # datadir = maindir + 'data/'
-    datadir = '/spice/scratch/ewarren/LM/full_forecast/'
+    maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
+    #maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
+    datadir = maindir + 'data/'
+    #datadir = '/spice/scratch/ewarren/LM/full_forecast/'
     # ceilDatadir = datadir + 'L1/'
-#     modDatadir = datadir + model_type + '/'
-    metadatadir = '/data/jcmm1/ewarren/metadata/'
-    modDatadir = datadir
+    modDatadir = datadir + model_type + '/'
+    metadatadir = datadir
+    #metadatadir = '/data/jcmm1/ewarren/metadata/'
+    #modDatadir = datadir
     pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
     savedir = pcsubsampledir + data_var+'/'
     topmeddir = savedir + 'top_median/'
@@ -1204,14 +1206,14 @@ if __name__ == '__main__':
     # Read and process data
     # ==============================================================================
 
-    # make directory paths for the output figures
-    # pcsubsampledir, then savedir needs to be checked first as they are parent dirs
-    for dir_i in [pcsubsampledir, savedir,
-                  eofsavedir, pcsavedir, expvarsavedir, rotexpvarsavedir, rotEOFsavedir, rotPCscoresdir,
-                  boxsavedir, corrmatsavedir,
-                  topmeddir, botmeddir]:
-        if os.path.exists(dir_i) == False:
-            os.mkdir(dir_i)
+    # # make directory paths for the output figures
+    # # pcsubsampledir, then savedir needs to be checked first as they are parent dirs
+    # for dir_i in [pcsubsampledir, savedir,
+    #               eofsavedir, pcsavedir, expvarsavedir, rotexpvarsavedir, rotEOFsavedir, rotPCscoresdir,
+    #               boxsavedir, corrmatsavedir,
+    #               topmeddir, botmeddir]:
+    #     if os.path.exists(dir_i) == False:
+    #         os.mkdir(dir_i)
 
     # make small text file to make sure the figures used the right subsampled data
     with open(savedir + 'subsample.txt', 'w') as file_check:
@@ -1225,8 +1227,8 @@ if __name__ == '__main__':
     ceilsitefile = 'improveNetworksCeils.csv'
     ceil_metadata = ceil.read_ceil_metadata(metadatadir, ceilsitefile)
 
-    #height_idx = 1
-    height_idx = int(sys.argv[1])
+    height_idx = 5
+    #height_idx = int(sys.argv[1])
     
     #for height_idx in [int(sys.argv[1])]: #np.arange(24):# [0]: #np.arange(24): # max 30 -> ~ 3.1km = too high! v. low aerosol; [8] = 325 m; [23] = 2075 m
     os.system('echo height idx '+str(height_idx)+' being processed')
