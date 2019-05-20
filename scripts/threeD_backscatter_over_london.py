@@ -15,15 +15,15 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import os
 
-# import ellUtils.ellUtils as eu
-# import ceilUtils.ceilUtils as ceil
-# from forward_operator import FOUtils as FO
-# from forward_operator import FOconstants as FOcon
+import ellUtils.ellUtils as eu
+import ceilUtils.ceilUtils as ceil
+from forward_operator import FOUtils as FO
+from forward_operator import FOconstants as FOcon
 
-import ellUtils as eu
-import ceilUtils as ceil
-import FOUtils as FO
-import FOconstants as FOcon
+# import ellUtils as eu
+# import ceilUtils as ceil
+# import FOUtils as FO
+# import FOconstants as FOcon
 
 def calculate_corner_locations(coord):
 
