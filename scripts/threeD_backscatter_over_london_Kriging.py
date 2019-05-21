@@ -240,7 +240,7 @@ if __name__ == '__main__':
     twodrangedir = maindir + 'figures/model_runs/2D_range/'
     twodsilledir = maindir + 'figures/model_runs/2D_sill/'
     twodRangeCompositeDir = twodrangedir + 'composite/'
-    npysavedir = datadir + 'npy/'
+    krigingsavedir = datadir + 'npy/kriging/'
 
     # intial test case
     # daystr = ['20180406']
@@ -251,10 +251,6 @@ if __name__ == '__main__':
               '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
               '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
     days_iterate = eu.dateList_to_datetime(daystr)
-
-    # save name
-    # savestr = day.strftime('%Y%m%d') + '_3Dbackscatter.npy'
-
 
     # import all site names and heights
     all_sites = ['CL31-A_IMU', 'CL31-B_RGS', 'CL31-C_MR', 'CL31-D_SWT', 'CL31-E_NK']
@@ -305,7 +301,7 @@ if __name__ == '__main__':
 
         # calculate the 3D backscatter field across London
         # .shape = (hour, height, lat, lon)
-        mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, 905, allvars=True)
+        mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, 905, metvars=True)
 
         # reduce domain size to match UKV extract
         # domain edges found using eu.nearest compared to the UKV extract domain edges
@@ -404,14 +400,19 @@ if __name__ == '__main__':
                 # Ordinary Kriging: 3.1.1 in pykrige documentation
                 # Function fails when given 2D arrays so pass in flattened 1D arrays of the 2D data.
                 OK = OrdinaryKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(),
-                                     variogram_model=variogram_model, nlags=35, weight=True) # verbose=True,enable_plotting=True,
+                                     variogram_model=variogram_model, nlags=35, weight=True, verbose=True,enable_plotting=True) # verbose=True,enable_plotting=True,
 
-                # ax = plt.gca()
-                # plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height=' + str(mod_data['level_height'][height_idx]) + 'm')
-                # ax.set_xlabel('Distance [km]')
-                # ax.set_ylabel('Semi-variance')
-                # savesubdir = variogramsavedir + hr.strftime('%Y-%m-%d') + '/'
-                # savename = hr.strftime('%Y-%m-%d_%H') +  '_{:05.0f}'.format(mod_data['level_height'][height_idx]) + 'm_variogram'
+                # OK.semivariance # y values
+                #OK.lags # x values
+                #plt.plot(OK.lags, OK.semivariance)
+
+
+                ax = plt.gca()
+                plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height=' + str(mod_data['level_height'][height_idx]) + 'm')
+                ax.set_xlabel('Distance [km]')
+                ax.set_ylabel('Semi-variance')
+                savesubdir = variogramsavedir + hr.strftime('%Y-%m-%d') + '/'
+                savename = hr.strftime('%Y-%m-%d_%H') +  '_{:05.0f}'.format(mod_data['level_height'][height_idx]) + 'm_variogram'
                 #
                 # if os.path.exists(savesubdir) == False:
                 #     os.mkdir(savesubdir)
@@ -426,30 +427,29 @@ if __name__ == '__main__':
                     v_range[d, hr_idx, height_idx] = OK.variogram_model_parameters[1]
                     nugget[d, hr_idx, height_idx] = OK.variogram_model_parameters[2]
 
-        # plt.figure()
-        # plt.hist(data.flatten(), bins=50)
+            # ==============================================================================
+            # Plotting
+            # ==============================================================================
 
-        # np.argsort(U_mean)
-        # np.array(U_mean)[np.argsort(U_mean)]
+            # save per height
 
-        # ==============================================================================
-        # Plotting
-        # ==============================================================================
+        # # this day's variables to plot
+        # day_time = mod_data['time'][:-1]
+        # day_height = mod_data['level_height'][height_range]
+        # day_sill_data = sill[d, :, height_range]
+        # day_range_data = v_range[d, :, height_range]
+        # U_str = '{:.4}'.format(U_mean[d])
+        # aer_str = '{:.4}'.format(aer_mean[d])
+        # rh_str = '{:.4}'.format(rh_mean[d])
+        # savefigdir = twodsilledir
+        #
+        # # plot 2D range and sill for today
+        # fig, ax = twoD_sill_one_day(day_time, day_height, day_sill_data, mlh_obs, data_var, savefigdir, U_str, aer_str, rh_str)
+        #
+        # fig, ax = twoD_range_one_day(day_time, day_height, day_range_data, mlh_obs, data_var, savefigdir, U_str, aer_str, rh_str)
 
-        # this day's variables to plot
-        day_time = mod_data['time'][:-1]
-        day_height = mod_data['level_height'][height_range]
-        day_sill_data = sill[d, :, height_range]
-        day_range_data = v_range[d, :, height_range]
-        U_str = '{:.4}'.format(U_mean[d])
-        aer_str = '{:.4}'.format(aer_mean[d])
-        rh_str = '{:.4}'.format(rh_mean[d])
-        savefigdir = twodsilledir
+        # save data in numpy array
 
-        # plot 2D range and sill for today
-        fig, ax = twoD_sill_one_day(day_time, day_height, day_sill_data, mlh_obs, data_var, savefigdir, U_str, aer_str, rh_str)
-
-        #fig, ax = twoD_range_one_day(day_time, day_height, day_range_data, mlh_obs, data_var, savefigdir, U_str, aer_str, rh_str)
 
     # # multiple days
     # time = [i.hour for i in mod_data['time'][:-1]]
