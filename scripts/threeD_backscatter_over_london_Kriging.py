@@ -402,6 +402,7 @@ if __name__ == '__main__':
                 OK = OrdinaryKriging(unrotLon2d.flatten(), unrotLat2d.flatten(), data.flatten(),
                                      variogram_model=variogram_model, nlags=35, weight=True, verbose=True,enable_plotting=True) # verbose=True,enable_plotting=True,
 
+                # start plotting data
                 # OK.semivariance # y values
                 #OK.lags # x values
                 #plt.plot(OK.lags, OK.semivariance)
