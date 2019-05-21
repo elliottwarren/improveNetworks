@@ -28,7 +28,9 @@ present and the programs described in this book leave the choice up to the user
 """
 
 import sys
-sys.path.append('C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/scripts')
+sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/Utils') #aerFO
+sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ellUtils') # general utils
+sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ceilUtils') # ceil utils
 
 import numpy as np
 import iris
@@ -37,12 +39,15 @@ import matplotlib as mpl
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.pyplot as plt
 from scipy import stats
-from ellUtils import ellUtils as eu
+
+#from ellUtils import ellUtils as eu
+#import ceilUtils.ceilUtils as ceil
+
+import ellUtils as eu
+import ceilUtils as ceil
 
 import os
 from sklearn.cluster import AgglomerativeClustering
-
-import ceilUtils.ceilUtils as ceil
 
 if __name__ == '__main__':
 
@@ -61,8 +66,8 @@ if __name__ == '__main__':
     # subsampled?
     #pcsubsample = 'full'
     #pcsubsample = '11-18_hr_range'
-    #pcsubsample = 'daytime'
-    pcsubsample = 'nighttime'
+    pcsubsample = 'daytime'
+    #pcsubsample = 'nighttime'
 
     # cluster type - to match the AgglomerativeClustering function and used in savename
     linkage_type = 'ward'
@@ -73,16 +78,32 @@ if __name__ == '__main__':
     # ------------------
 
     # which modelled data to read in
-    model_type = 'UKV'
+    #model_type = 'UKV'
+    model_type = 'LM'
 
     # ancillary type to read, calc and plot
     ancil_type = 'murk_aer'
 
-    # directories
-    maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-    datadir = maindir + 'data/'
+    # Laptop directories
+    # maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
+    # datadir = maindir + 'data/'
+    # npydatadir = datadir + 'npy/'
+    # ukvdatadir = maindir + 'data/UKV/'
+    # ceilDatadir = datadir + 'L1/'
+    # modDatadir = datadir + model_type + '/'
+    # pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
+    # savedir = pcsubsampledir + data_var+'/'
+    # clustersavedir = savedir + 'cluster_analysis/'
+    # histsavedir = clustersavedir + 'histograms/'
+    # npysavedir = datadir + 'npy/PCA/'
+
+    # MO directories
+    maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
+    datadir = '/data/jcmm1/ewarren/'
+    orogdatadir = '/data/jcmm1/ewarren/ancillaries/'
+    murkdatadir = '/data/jcmm1/ewarren/ancillaries/murk_aer/'+model_type+'/'
     npydatadir = datadir + 'npy/'
-    ukvdatadir = maindir + 'data/UKV/'
+    metadatadir = datadir + 'metadata/'
     ceilDatadir = datadir + 'L1/'
     modDatadir = datadir + model_type + '/'
     pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
@@ -102,17 +123,31 @@ if __name__ == '__main__':
 
     # 1. ceilometer metadata
     ceilsitefile = 'improveNetworksCeils.csv'
-    ceil_metadata = ceil.read_ceil_metadata(datadir, ceilsitefile)
+    ceil_metadata = ceil.read_ceil_metadata(metadatadir, ceilsitefile)
 
     # 2. Loadings
     # Read in the unrotated loadings and extract out the loadings (data), longitude and latitude (WGS84 space)
-    filename = npysavedir + data_var +'_'+pcsubsample+'_unrotLoadings.npy'
-    raw = np.load(filename).flat[0]
-    data = np.hstack(raw['loadings'].values())  # .shape(Xi, all_loadings)
-    # just get a few heights
-    #data = np.hstack([raw['loadings'][str(i)] for i in np.arange(7,20)])
-    lons = raw['longitude']
-    lats = raw['latitude']
+    if model_type == 'UKV':
+        filename = npysavedir + data_var +'_'+pcsubsample+'_unrotLoadings.npy'
+        raw = np.load(filename).flat[0]
+        data = np.hstack(raw['loadings'].values())  # .shape(Xi, all_loadings)
+        # just get a few heights
+        #data = np.hstack([raw['loadings'][str(i)] for i in np.arange(7,20)])
+        lons = raw['longitude']
+        lats = raw['latitude']
+
+    elif model_type == 'LM':
+        raw=[]
+        for i in np.arange(24):
+            filename = npydatadir + model_type + '_' + data_var + '_' + pcsubsample + '_heightidx' + '{}'.format(i) + \
+            '_unrotLoadings.npy'
+            raw += [np.load(filename).flat[0]]
+        # double hstack required
+        data = np.hstack([np.hstack(height_i['loadings'].values()) for height_i in raw])
+        lons = raw[0]['longitude']
+        lats = raw[0]['latitude']
+
+
 
     # 3. Orography
     # manually checked and lined up against UKV data used in PCA.
@@ -124,8 +159,26 @@ if __name__ == '__main__':
         UK_lon_constraint = iris.Constraint(grid_longitude=lambda cell: 361.21997 <= cell <= 361.73297+spacing)
         orog = iris.load_cube(ukvdatadir + 'UKV_orography.nc', constraint=UK_lat_constraint & UK_lon_constraint)
 
-    # 4. murk ancillaries (shape = month, height, lat, lon)
-    murk_aer = np.load(npydatadir + model_type+'_murk_ancillaries.npy').flatten()[0]
+        # 4. murk ancillaries (shape = month, height, lat, lon)
+        murk_aer = np.load(npydatadir + model_type+'_murk_ancillaries.npy').flatten()[0]
+
+    elif model_type == 'LM':
+        # orography
+        spacing = 0.003 # checked
+        # checked that it perfectly matches LM data extract (setup is different to UKV orog_con due to
+        #    number precision issues.
+        orog_con = iris.Constraint(name='surface_altitude',
+                                   coord_values={
+                                       'grid_latitude': lambda cell: -1.214 - spacing < cell < -0.776,
+                                       'grid_longitude': lambda cell: 1.21 < cell < 1.732 + spacing})
+        orog = iris.load_cube(orogdatadir + '20181022T2100Z_London_charts', orog_con)
+
+        # MURK - lon and lats here are in unrotated space but do match the same domain as orog (manualy checked).
+        con = iris.Constraint(coord_values={
+            'grid_latitude': lambda cell: -1.214 - spacing < cell < -0.776,
+            'grid_longitude': lambda cell: 361.21 < cell < 361.732 + spacing})
+        murk_aer_all = iris.load_cube(murkdatadir + 'qrclim.murk_L70')
+        murk_aer = murk_aer_all.extract(con)
 
     # ==============================================================================
     # Process data
@@ -141,13 +194,14 @@ if __name__ == '__main__':
 
     # # split orography into groups based on clusters
     # # Flatten in fortran style to match the clustering code above(column wise instead of default row-wise('C'))
-    # orog_groups = [orog.data.flatten('F')[cluster_groups == i] for i in group_numbers]
     # # Kruskal-Wallis test (non-parametric equivalent of ANOVA)
     # kw_s, kw_p = stats.kruskal(*orog_groups)
     if ancil_type == 'murk_aer':
         height = 0
         month_idx = 0
         ancil_data = murk_aer.data[month_idx, height, :, :]
+    elif ancil_type == 'orog':
+        ancil_data = orog.data
 
 
     # split the ancillary into groups based on the cluster groups
