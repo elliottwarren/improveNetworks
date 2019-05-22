@@ -11,17 +11,14 @@ https://machinelearningmastery.com/calculate-principal-component-analysis-scratc
 
 # workaround while PYTHONPATH plays up on MO machine
 import sys
-#sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts')
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/Utils') #aerFO
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ellUtils') # general utils
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ceilUtils') # ceil utils
 
-#sys.path.append('C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/scripts')
-
 import numpy as np
 
 import matplotlib
-#matplotlib.use('Agg')
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cbook as cbook
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -31,28 +28,17 @@ import pandas as pd
 from scipy import stats
 from copy import deepcopy
 import sunrise
-import time
 
-#import dask.multiprocessing
-#import dask
-#import dask.array as da
-#from dask import compute, delayed, visualize
-# setting dask.config does not work as it is only present in the developers version
-#    apparently: https://github.com/dask/dask/issues/3531
-#dask.config(num_workers=5)
+# import ellUtils.ellUtils as eu
+# import ceilUtils.ceilUtils as ceil
+# from forward_operator import FOUtils as FO
+# from forward_operator import FOconstants as FOcon
 
-import ellUtils.ellUtils as eu
-import ceilUtils.ceilUtils as ceil
-from forward_operator import FOUtils as FO
-from forward_operator import FOconstants as FOcon
-
-# import ellUtils as eu
-# import ceilUtils as ceil
-# import FOUtils as FO
-# import FOconstants as FOcon
-# # from Utils import FOconstants as FOcon
-
-from threeD_backscatter_over_london import rotate_lon_lat_2D
+import ellUtils as eu
+import ceilUtils as ceil
+import FOUtils as FO
+import FOconstants as FOcon
+# from Utils import FOconstants as FOcon
 
 def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx, **kwargs):
     """
@@ -240,6 +226,75 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
     #     raise ValueError('need to interpolate u, v and w winds onto the B-grid :(')
 
     return mod_data
+
+def rotate_lon_lat_2D(longitude, latitude, model_type, corner_locs=False):
+    """
+    Create 2D array of lon and lats in rotated space (WGS84)
+
+    :param mod_data:
+    :keyword corner_locs (bool): return lon and lat corner locations so (0,0) is bottom left corner
+            of bottom left box
+    :return: rotlon2D, rotlat2D (2D arrays): 2D arrays of rotate lon and latitudes (rot. to WSG84)
+    """
+
+    import cartopy.crs as ccrs
+    import iris
+
+    # test corners with a plot if necessary
+    def test_create_corners(rotlat2D, rotlon2D, corner_lats, corner_lons):
+        """ quick plotting to see whether the functions within the script have created the corner lat and lon properly.
+        Original and extrap/interp data together."""
+
+        # copy and pasted out of main functions. Put back if this function is to be used.
+        # # 3D array with a slice with nothing but 0s...
+        # normalgrid = ll.transform_points(rotpole, rotlon2D, rotlat2D)
+        # lons_orig = normalgrid[:, :, 0]
+        # lats_orig = normalgrid[:, :, 1]
+        # # [:, :, 2] always seems to be 0.0 ... not sure what it is meant to be... land mask maybe...
+        #
+        # # 3D array with a slice with nothing but 0s...
+        # normalgrid = ll.transform_points(rotpole, corner_lons, corner_lats)
+        # lons = normalgrid[:, :, 0]
+        # lats = normalgrid[:, :, 1]
+
+        plt.figure()
+        plt.scatter(rotlat2D, rotlon2D, color='red')
+        plt.scatter(corner_lats, corner_lons, color='blue')
+        # plt.scatter(a, d, color='green')
+        # plt.scatter(lats, lons, color='red')
+        # plt.scatter(lats_orig, lons_orig, color='blue')
+        plt.figure()
+        plt.pcolormesh(corner_lats, vmin=np.nanmin(corner_lats), vmax=np.nanmax(corner_lats))
+        plt.colorbar()
+
+        return
+
+    # duplicate the single column array but number of rows in latitude
+    # rotlat2D needs to be transposed as rows need to be latitude, and columns longitude.
+    # np.transpose() does transpose in the correct direction:
+    # compare mod_all_data['latitude'][n] with rotlat2D[n,:]
+
+    rotlon2D = np.array([longitude] * latitude.shape[0])
+    rotlat2D = np.transpose(np.array([latitude] * longitude.shape[0]))
+
+    # Get model transformation object (ll) to unrotate the model data later
+    # Have checked rotation is appropriate for all models below
+    if (model_type == 'UKV') | (model_type == '55m') | (model_type == 'LM'):
+        rotpole = (iris.coord_systems.RotatedGeogCS(37.5, 177.5, ellipsoid=iris.coord_systems.GeogCS(
+            6371229.0))).as_cartopy_crs()  # rot grid
+        rotpole2 = ccrs.RotatedPole(pole_longitude=177.5, pole_latitude=37.5)
+        ll = ccrs.Geodetic()  # to normal grid
+
+    # 3D array with a slice with nothing but 0s...
+    normalgrid = ll.transform_points(rotpole, rotlon2D, rotlat2D)
+    lons = normalgrid[:, :, 0]
+    lats = normalgrid[:, :, 1]
+    # [:, :, 2] always seems to be 0.0 ... not sure what it is meant to be... land mask maybe...
+
+    # test to see if the functions above have made the corner lat and lons properly
+    # test_create_corners(rotlat2D, rotlon2D, corner_lats, corner_lons)
+
+    return lons, lats
 
 def flip_vector_sign(matrix):
     """If ||eig_vector|| = -1, make it +1 instead"""
@@ -1138,27 +1193,46 @@ if __name__ == '__main__':
     # subsampled?
     #pcsubsample = 'full'
     #pcsubsample = '11-18_hr_range'
-    pcsubsample = 'daytime'
-    #pcsubsample = 'nighttime'
+    #pcsubsample = 'daytime'
+    pcsubsample = 'nighttime'
 
     # ------------------
 
     # which modelled data to read in
-    model_type = 'UKV'
-#    model_type = 'LM'
+    #model_type = 'UKV'
+    model_type = 'LM'
     #res = FOcon.model_resolution[model_type]
     Z='21'
 
-    # directories
-    maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-    #maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
-    datadir = maindir + 'data/'
-    #datadir = '/spice/scratch/ewarren/LM/full_forecast/'
+    # laptop directories - list needs filtering of MO machine directories
+    # maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
+    # datadir = maindir + 'data/'
+    # #datadir = '/spice/scratch/ewarren/LM/full_forecast/'
+    # # ceilDatadir = datadir + 'L1/'
+    # modDatadir = datadir + model_type + '/'
+    # metadatadir = datadir
+    # #metadatadir = '/data/jcmm1/ewarren/metadata/'
+    # #modDatadir = datadir
+    # pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
+    # savedir = pcsubsampledir + data_var+'/'
+    # topmeddir = savedir + 'top_median/'
+    # botmeddir = savedir + 'bot_median/'
+    # eofsavedir = savedir + 'EOFs/'
+    # rotEOFsavedir = savedir + 'rotEOFs/'
+    # rotPCscoresdir = savedir + 'rotPCs/'
+    # pcsavedir = savedir + 'PCs/'
+    # expvarsavedir = savedir + 'explained_variance/'
+    # rotexpvarsavedir = savedir + 'rot_explained_variance/'
+    # boxsavedir = savedir + 'boxplots/'
+    # corrmatsavedir = savedir + 'corrMatrix/'
+    # npysavedir = '/data/jcmm1/ewarren/npy/'
+
+    # MO directories
+    maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
+    datadir = '/spice/scratch/ewarren/'+model_type+'/full_forecast/'
     # ceilDatadir = datadir + 'L1/'
     modDatadir = datadir + model_type + '/'
-    metadatadir = datadir
-    #metadatadir = '/data/jcmm1/ewarren/metadata/'
-    #modDatadir = datadir
+    metadatadir = '/data/jcmm1/ewarren/metadata/'
     pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
     savedir = pcsubsampledir + data_var+'/'
     topmeddir = savedir + 'top_median/'
@@ -1206,14 +1280,14 @@ if __name__ == '__main__':
     # Read and process data
     # ==============================================================================
 
-    # # make directory paths for the output figures
-    # # pcsubsampledir, then savedir needs to be checked first as they are parent dirs
-    # for dir_i in [pcsubsampledir, savedir,
-    #               eofsavedir, pcsavedir, expvarsavedir, rotexpvarsavedir, rotEOFsavedir, rotPCscoresdir,
-    #               boxsavedir, corrmatsavedir,
-    #               topmeddir, botmeddir]:
-    #     if os.path.exists(dir_i) == False:
-    #         os.mkdir(dir_i)
+    # make directory paths for the output figures
+    # pcsubsampledir, then savedir needs to be checked first as they are parent dirs
+    for dir_i in [pcsubsampledir, savedir,
+                  eofsavedir, pcsavedir, expvarsavedir, rotexpvarsavedir, rotEOFsavedir, rotPCscoresdir,
+                  boxsavedir, corrmatsavedir,
+                  topmeddir, botmeddir]:
+        if os.path.exists(dir_i) == False:
+            os.mkdir(dir_i)
 
     # make small text file to make sure the figures used the right subsampled data
     with open(savedir + 'subsample.txt', 'w') as file_check:
@@ -1227,8 +1301,8 @@ if __name__ == '__main__':
     ceilsitefile = 'improveNetworksCeils.csv'
     ceil_metadata = ceil.read_ceil_metadata(metadatadir, ceilsitefile)
 
-    height_idx = 5
-    #height_idx = int(sys.argv[1])
+    #height_idx = 5 # np.arange(24)
+    height_idx = int(sys.argv[1])
     
     #for height_idx in [int(sys.argv[1])]: #np.arange(24):# [0]: #np.arange(24): # max 30 -> ~ 3.1km = too high! v. low aerosol; [8] = 325 m; [23] = 2075 m
     os.system('echo height idx '+str(height_idx)+' being processed')
@@ -1312,14 +1386,6 @@ if __name__ == '__main__':
     os.system('echo finished calc cov matrix...')
     os.system('echo '+str(dt.datetime.now() - script_start))
     
-#         # might work ok... not sure 
-#         start = time.time()  
-#         dask_m_T = da.from_array(data_m.T, chunks=(data_m.T.shape[0],1))
-#         cov_data_prep = da.cov(dask_m_T)
-#         cov_data = cov_data_prep.compute(get=dask.multiprocessing.get)  
-#         end = time.time()
-#         print('dask parallel: '+str(end-start))     
-    
     
     # pseduo inverse as the cov_matrix is too ill-conditioned for a normal inv.
     os.system('echo start invert cov matrix...')
@@ -1365,7 +1431,7 @@ if __name__ == '__main__':
     # met variables to calculate statistics with
     met_vars = mod_data.keys()
     print 'removing Q_H for now as it is on different height levels'
-    for none_met_var in ['longitude', 'latitude', 'level_height', 'time', 'Q_H', data_var]:
+    for none_met_var in ['longitude', 'latitude', 'level_height', 'time', 'Q_H']:
         if none_met_var in met_vars: met_vars.remove(none_met_var)
 
     # add height dictionary within statistics
