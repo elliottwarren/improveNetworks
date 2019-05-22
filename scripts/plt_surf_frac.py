@@ -73,7 +73,7 @@ if __name__ == '__main__':
         spacing = 0.003 # checked
         # checked that it perfectly matches LM data extract (setup is different to UKV orog_con due to
         #    number precision issues.
-        con = iris.Constraint(name='surface_altitude',
+        orog_con = iris.Constraint(name='surface_altitude',
                                    coord_values={
                                        'grid_latitude': lambda cell: -1.214 - spacing < cell < -0.776,
                                        'grid_longitude': lambda cell: 1.21 < cell < 1.732 + spacing})
