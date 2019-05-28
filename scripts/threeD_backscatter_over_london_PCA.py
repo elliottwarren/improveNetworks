@@ -18,7 +18,7 @@ sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ceilU
 import numpy as np
 
 import matplotlib
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cbook as cbook
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -29,16 +29,16 @@ from scipy import stats
 from copy import deepcopy
 import sunrise
 
-# import ellUtils.ellUtils as eu
-# import ceilUtils.ceilUtils as ceil
-# from forward_operator import FOUtils as FO
-# from forward_operator import FOconstants as FOcon
+import ellUtils.ellUtils as eu
+import ceilUtils.ceilUtils as ceil
+from forward_operator import FOUtils as FO
+from forward_operator import FOconstants as FOcon
 
-import ellUtils as eu
-import ceilUtils as ceil
-import FOUtils as FO
-import FOconstants as FOcon
-# from Utils import FOconstants as FOcon
+# import ellUtils as eu
+# import ceilUtils as ceil
+# import FOUtils as FO
+# import FOconstants as FOcon
+# # from Utils import FOconstants as FOcon
 
 def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx, **kwargs):
     """
@@ -298,8 +298,14 @@ def rotate_lon_lat_2D(longitude, latitude, model_type, corner_locs=False):
 
 def flip_vector_sign(matrix):
     """If ||eig_vector|| = -1, make it +1 instead"""
+
+    # eof_t = np.transpose(
+    #     np.vstack([matrix[:,3][n:n + lat_shape] for n in np.arange(0, X_shape, lat_shape)]))
+    # plt.pcolormesh(eof_t)
+
     for i in range(matrix.shape[1]):  # columnwise
         if matrix[:, i].sum() < 0:
+            print 'EOF'+str(i+1) + ' is being flipped'
             matrix[:, i] *= -1.0
     return matrix
 
@@ -1193,46 +1199,25 @@ if __name__ == '__main__':
     # subsampled?
     #pcsubsample = 'full'
     #pcsubsample = '11-18_hr_range'
-    #pcsubsample = 'daytime'
-    pcsubsample = 'nighttime'
+    pcsubsample = 'daytime'
+    #pcsubsample = 'nighttime'
 
     # ------------------
 
     # which modelled data to read in
-    #model_type = 'UKV'
-    model_type = 'LM'
+    model_type = 'UKV'
+    #model_type = 'LM'
     #res = FOcon.model_resolution[model_type]
     Z='21'
 
-    # laptop directories - list needs filtering of MO machine directories
-    # maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-    # datadir = maindir + 'data/'
-    # #datadir = '/spice/scratch/ewarren/LM/full_forecast/'
-    # # ceilDatadir = datadir + 'L1/'
-    # modDatadir = datadir + model_type + '/'
-    # metadatadir = datadir
-    # #metadatadir = '/data/jcmm1/ewarren/metadata/'
-    # #modDatadir = datadir
-    # pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
-    # savedir = pcsubsampledir + data_var+'/'
-    # topmeddir = savedir + 'top_median/'
-    # botmeddir = savedir + 'bot_median/'
-    # eofsavedir = savedir + 'EOFs/'
-    # rotEOFsavedir = savedir + 'rotEOFs/'
-    # rotPCscoresdir = savedir + 'rotPCs/'
-    # pcsavedir = savedir + 'PCs/'
-    # expvarsavedir = savedir + 'explained_variance/'
-    # rotexpvarsavedir = savedir + 'rot_explained_variance/'
-    # boxsavedir = savedir + 'boxplots/'
-    # corrmatsavedir = savedir + 'corrMatrix/'
-    # npysavedir = '/data/jcmm1/ewarren/npy/'
-
-    # MO directories
-    maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
-    datadir = '/spice/scratch/ewarren/'+model_type+'/full_forecast/'
+    #laptop directories - list needs filtering of MO machine directories
+    maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
+    datadir = maindir + 'data/'
     # ceilDatadir = datadir + 'L1/'
     modDatadir = datadir + model_type + '/'
-    metadatadir = '/data/jcmm1/ewarren/metadata/'
+    metadatadir = datadir
+    #metadatadir = '/data/jcmm1/ewarren/metadata/'
+    #modDatadir = datadir
     pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
     savedir = pcsubsampledir + data_var+'/'
     topmeddir = savedir + 'top_median/'
@@ -1246,6 +1231,26 @@ if __name__ == '__main__':
     boxsavedir = savedir + 'boxplots/'
     corrmatsavedir = savedir + 'corrMatrix/'
     npysavedir = '/data/jcmm1/ewarren/npy/'
+
+    # # MO directories
+    # maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
+    # datadir = '/spice/scratch/ewarren/'+model_type+'/full_forecast/'
+    # # ceilDatadir = datadir + 'L1/'
+    # modDatadir = datadir + model_type + '/'
+    # metadatadir = '/data/jcmm1/ewarren/metadata/'
+    # pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
+    # savedir = pcsubsampledir + data_var+'/'
+    # topmeddir = savedir + 'top_median/'
+    # botmeddir = savedir + 'bot_median/'
+    # eofsavedir = savedir + 'EOFs/'
+    # rotEOFsavedir = savedir + 'rotEOFs/'
+    # rotPCscoresdir = savedir + 'rotPCs/'
+    # pcsavedir = savedir + 'PCs/'
+    # expvarsavedir = savedir + 'explained_variance/'
+    # rotexpvarsavedir = savedir + 'rot_explained_variance/'
+    # boxsavedir = savedir + 'boxplots/'
+    # corrmatsavedir = savedir + 'corrMatrix/'
+    # npysavedir = '/data/jcmm1/ewarren/npy/'
 
     # intial test case
     #daystr = ['20180406']
@@ -1301,8 +1306,8 @@ if __name__ == '__main__':
     ceilsitefile = 'improveNetworksCeils.csv'
     ceil_metadata = ceil.read_ceil_metadata(metadatadir, ceilsitefile)
 
-    #height_idx = 5 # np.arange(24)
-    height_idx = int(sys.argv[1])
+    height_idx = 12 # np.arange(24)
+    #height_idx = int(sys.argv[1])
     
     #for height_idx in [int(sys.argv[1])]: #np.arange(24):# [0]: #np.arange(24): # max 30 -> ~ 3.1km = too high! v. low aerosol; [8] = 325 m; [23] = 2075 m
     os.system('echo height idx '+str(height_idx)+' being processed')
