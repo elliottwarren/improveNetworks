@@ -1199,8 +1199,8 @@ if __name__ == '__main__':
     # subsampled?
     #pcsubsample = 'full'
     #pcsubsample = '11-18_hr_range'
-    pcsubsample = 'daytime'
-    #pcsubsample = 'nighttime'
+    #pcsubsample = 'daytime'
+    pcsubsample = 'nighttime'
 
     # ------------------
 
@@ -1230,7 +1230,7 @@ if __name__ == '__main__':
     rotexpvarsavedir = savedir + 'rot_explained_variance/'
     boxsavedir = savedir + 'boxplots/'
     corrmatsavedir = savedir + 'corrMatrix/'
-    npysavedir = '/data/jcmm1/ewarren/npy/'
+    npysavedir = datadir + '/npy/PCA/'
 
     # # MO directories
     # maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
@@ -1306,230 +1306,233 @@ if __name__ == '__main__':
     ceilsitefile = 'improveNetworksCeils.csv'
     ceil_metadata = ceil.read_ceil_metadata(metadatadir, ceilsitefile)
 
-    height_idx = 12 # np.arange(24)
+    #height_idx = 12 # np.arange(24)
     #height_idx = int(sys.argv[1])
+    for height_idx in np.arange(12,24):
     
-    #for height_idx in [int(sys.argv[1])]: #np.arange(24):# [0]: #np.arange(24): # max 30 -> ~ 3.1km = too high! v. low aerosol; [8] = 325 m; [23] = 2075 m
-    os.system('echo height idx '+str(height_idx)+' being processed')
-    os.system('echo '+str(dt.datetime.now() - script_start))
+        #for height_idx in [int(sys.argv[1])]: #np.arange(24):# [0]: #np.arange(24): # max 30 -> ~ 3.1km = too high! v. low aerosol; [8] = 325 m; [23] = 2075 m
+        os.system('echo height idx '+str(height_idx)+' being processed')
+        os.system('echo '+str(dt.datetime.now() - script_start))
 
-    #print 'Reading in data...'
+        #print 'Reading in data...'
 
-    # read in model data and subsample using different **kwargs
-    # Can accept lon_range=lon_range as an argument if >1microgram cut off is being used
-    if pcsubsample == '11-18_hr_range':
-        mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx,
-                                                     hr_range=[11,18])
-    elif (pcsubsample == 'daytime') | (pcsubsample == 'nighttime'):
-        mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx,
-                                                     subsample=pcsubsample)
+        # read in model data and subsample using different **kwargs
+        # Can accept lon_range=lon_range as an argument if >1microgram cut off is being used
+        if pcsubsample == '11-18_hr_range':
+            mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx,
+                                                         hr_range=[11,18])
+        elif (pcsubsample == 'daytime') | (pcsubsample == 'nighttime'):
+            mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx,
+                                                         subsample=pcsubsample)
 
-    if model_type == 'UKV':
-        lon_range = np.arange(26, 65) # only London area (right hand side of larger domain)
-    elif model_type == 'LM':
-        lon_range = np.arange(mod_data['longitude'].shape[0])
+        if model_type == 'UKV':
+            lon_range = np.arange(26, 65) # only London area (right hand side of larger domain)
+        elif model_type == 'LM':
+            lon_range = np.arange(mod_data['longitude'].shape[0])
 
 
-    # extract out the height for this level
-    height_idx_str = str(height_idx)
-    height_i = mod_data['level_height']
-    height_i_label = '%.1fm' % mod_data['level_height'] # add m on the end
+        # extract out the height for this level
+        height_idx_str = str(height_idx)
+        height_i = mod_data['level_height']
+        height_i_label = '%.1fm' % mod_data['level_height'] # add m on the end
 
-    print 'height_idx = '+str(height_idx)
-    print 'height_i = '+str(height_i)
+        print 'height_idx = '+str(height_idx)
+        print 'height_i = '+str(height_i)
 
-    # if sample size is too small, skip PCA and stat creation (can't remember where but 200 was deemed ~ok)
-    if mod_data['time'].shape < 200:
-        os.system('echo '+'skipping '+str(height_i)+' as too few samples: '+str(len(mod_data['time'])))
-        exit()
+        # if sample size is too small, skip PCA and stat creation (can't remember where but 200 was deemed ~ok)
+        if mod_data['time'].shape < 200:
+            os.system('echo '+'skipping '+str(height_i)+' as too few samples: '+str(len(mod_data['time'])))
+            exit()
 
-    # rotate lon and lat into normal geodetic grid (WGS84)
-    lons, lats = rotate_lon_lat_2D(mod_data['longitude'][lon_range], mod_data['latitude'], model_type)
+        # rotate lon and lat into normal geodetic grid (WGS84)
+        lons, lats = rotate_lon_lat_2D(mod_data['longitude'][lon_range], mod_data['latitude'], model_type)
 
-    # extract out the data (just over London for the UKV)
-    if model_type == 'UKV':
-        if data_var == 'backscatter':
-            data = np.log10(mod_data[data_var][:, :, lon_range])
-        else:# (data_var == 'air_temperature') | (data_var == 'RH'):
-            data = mod_data[data_var][:, :, lon_range]
-    else: # LM
-        if data_var == 'backscatter':
-            data = np.log10(mod_data[data_var])
-        else:# (data_var == 'air_temperature') | (data_var == 'RH'):
-            data = mod_data[data_var]
+        # extract out the data (just over London for the UKV)
+        if model_type == 'UKV':
+            if data_var == 'backscatter':
+                data = np.log10(mod_data[data_var][:, :, lon_range])
+            else:# (data_var == 'air_temperature') | (data_var == 'RH'):
+                data = mod_data[data_var][:, :, lon_range]
+        else: # LM
+            if data_var == 'backscatter':
+                data = np.log10(mod_data[data_var])
+            else:# (data_var == 'air_temperature') | (data_var == 'RH'):
+                data = mod_data[data_var]
 
-    # ==============================================================================
-    # PCA
-    # ==============================================================================
-    os.system('echo beginning data processing...')
-    os.system('echo '+str(dt.datetime.now() - script_start))
+        # ==============================================================================
+        # PCA
+        # ==============================================================================
+        os.system('echo beginning data processing...')
+        os.system('echo '+str(dt.datetime.now() - script_start))
 
-    # get shape dimensions
-    lat_shape = int(data.shape[1])
-    lon_shape = int(data.shape[-1])
-    X_shape = int(lat_shape * lon_shape)
+        # get shape dimensions
+        lat_shape = int(data.shape[1])
+        lon_shape = int(data.shape[-1])
+        X_shape = int(lat_shape * lon_shape)
 
-    # reshape data so location is a single dimension (time, lat, lon) -> (time, X), where X is location
-    # Stacked latitudinally, as we are cutting into the longitude for each loop of i
-    data = np.hstack(([data[:, :, i] for i in np.arange(lon_shape)]))
+        # reshape data so location is a single dimension (time, lat, lon) -> (time, X), where X is location
+        # Stacked latitudinally, as we are cutting into the longitude for each loop of i
+        data = np.hstack(([data[:, :, i] for i in np.arange(lon_shape)]))
 
-    # 1. ------ numpy.eig or scipy.eigh (the latter is apparently more numerically stable wrt square matricies)
-    # (695L, 35L, 35L) - NOTE! reshape here is different to above! just use the syntatically messier version
-    #   as it is actually clearer that the reshaping is correct!
-    # data2 = np.reshape(data, (695, 1225))
-    # mean center each column
+        # 1. ------ numpy.eig or scipy.eigh (the latter is apparently more numerically stable wrt square matricies)
+        # (695L, 35L, 35L) - NOTE! reshape here is different to above! just use the syntatically messier version
+        #   as it is actually clearer that the reshaping is correct!
+        # data2 = np.reshape(data, (695, 1225))
+        # mean center each column
 
-    # data prep
-    M = np.mean(data.T, axis=1)
-    data_m = data - M
-    data_m_norm = data_m / np.std(data.T, axis=1)
-    os.system('echo start calc cov matrix...')
-    os.system('echo '+str(dt.datetime.now() - script_start))
-    
-    # set up cov_data array (takes ~ 3 hours for ~27000^2 array)
-    cov_data = np.cov(data_m.T) # comaprison shows this, rot loadings and PCs matches SPSS ...   
-    os.system('echo finished calc cov matrix...')
-    os.system('echo '+str(dt.datetime.now() - script_start))
-    
-    
-    # pseduo inverse as the cov_matrix is too ill-conditioned for a normal inv.
-    os.system('echo start invert cov matrix...')
-    os.system('echo '+str(dt.datetime.now() - script_start))
-    cov_inv = pinv(cov_data)
-    os.system('echo finished invert cov matrix...')
-    os.system('echo '+str(dt.datetime.now() - script_start))
-    
-    
-    # cov_data_normed = np.cov(data_m_norm.T)
-    #corr_data = np.corrcoef(data_m.T)
+        # data prep
+        M = np.mean(data.T, axis=1)
+        data_m = data - M
+        data_m_norm = data_m / np.std(data.T, axis=1)
+        os.system('echo start calc cov matrix...')
+        os.system('echo '+str(dt.datetime.now() - script_start))
 
-    # carry out Principal Component Analaysis
-    # loadings = eig_vecs * sqrt(eig_values)
-    os.system('echo beginning PCA...')
-    os.system('echo '+str(dt.datetime.now() - script_start))
+        # set up cov_data array (takes ~ 3 hours for ~27000^2 array)
+        cov_data = np.cov(data_m.T) # comaprison shows this, rot loadings and PCs matches SPSS ...
+        os.system('echo finished calc cov matrix...')
+        os.system('echo '+str(dt.datetime.now() - script_start))
 
-    eig_vecs_keep, eig_vals, pcScores, loadings, perc_var_explained_unrot_keep = pca_analysis(data_m, cov_data, cov_inv)
 
-    # store the kept loadings, for this height for later saving, and subsequent cluster analysis in another script
-    unrot_loadings_for_cluster[height_idx_str] = loadings
+        # pseduo inverse as the cov_matrix is too ill-conditioned for a normal inv.
+        os.system('echo start invert cov matrix...')
+        os.system('echo '+str(dt.datetime.now() - script_start))
+        cov_inv = pinv(cov_data)
+        os.system('echo finished invert cov matrix...')
+        os.system('echo '+str(dt.datetime.now() - script_start))
 
-    # If there is more than 1 set of EOFs, PCs and loadings - VARIMAX rotate
-    # Else, set the 'rotated' component equal to the unrotated component.
-    os.system('echo beginning VARIMAX rotation...')
-    os.system('echo '+str(dt.datetime.now() - script_start))
-    if loadings.shape[-1] > 1:
-        # rotate the loadings to spread out the eplained variance between all the kept vectors
-        reordered_rot_loadings, reordered_rot_pcScores, perc_var_explained_ratio_rot = \
-            rotate_loadings_and_calc_scores(loadings, cov_data, eig_vals)
-    else:
-        reordered_rot_loadings = loadings
-        reordered_rot_pcScores = pcScores
-        perc_var_explained_ratio_rot = perc_var_explained_unrot_keep
 
-    # ==============================================================================
-    # Calculate and save statistics
-    # ==============================================================================
+        # cov_data_normed = np.cov(data_m_norm.T)
+        #corr_data = np.corrcoef(data_m.T)
 
-    os.system('echo beginning statistic calculations...')
-    os.system('echo '+str(dt.datetime.now() - script_start))
+        # carry out Principal Component Analaysis
+        # loadings = eig_vecs * sqrt(eig_values)
+        os.system('echo beginning PCA...')
+        os.system('echo '+str(dt.datetime.now() - script_start))
 
-    # met variables to calculate statistics with
-    met_vars = mod_data.keys()
-    print 'removing Q_H for now as it is on different height levels'
-    for none_met_var in ['longitude', 'latitude', 'level_height', 'time', 'Q_H']:
-        if none_met_var in met_vars: met_vars.remove(none_met_var)
+        eig_vecs_keep, eig_vals, pcScores, loadings, perc_var_explained_unrot_keep = pca_analysis(data_m, cov_data, cov_inv)
 
-    # add height dictionary within statistics
-    statistics[height_idx_str] = {}
+        # store the kept loadings, for this height for later saving, and subsequent cluster analysis in another script
+        unrot_loadings_for_cluster[height_idx_str] = loadings
 
-    # keep a list of heights for plotting later
-    statistics['level_height'] = np.append(statistics['level_height'], height_i)
-    # statistics->height->EOF->met_var->stat
-    # plots to make...
-    #   bar chart... up vs lower, for each met var, for each height
+        # If there is more than 1 set of EOFs, PCs and loadings - VARIMAX rotate
+        # Else, set the 'rotated' component equal to the unrotated component.
+        os.system('echo beginning VARIMAX rotation...')
+        os.system('echo '+str(dt.datetime.now() - script_start))
+        if loadings.shape[-1] > 1:
+            # rotate the loadings to spread out the eplained variance between all the kept vectors
+            reordered_rot_loadings, reordered_rot_pcScores, perc_var_explained_ratio_rot = \
+                rotate_loadings_and_calc_scores(loadings, cov_data, eig_vals)
+        else:
+            reordered_rot_loadings = loadings
+            reordered_rot_pcScores = pcScores
+            perc_var_explained_ratio_rot = perc_var_explained_unrot_keep
 
-    # keep explained variances for unrotated and rotated EOFs
-    statistics[height_idx_str]['unrot_exp_variance'] = perc_var_explained_unrot_keep
-    statistics[height_idx_str]['rot_exp_variance'] = perc_var_explained_ratio_rot
+        # ==============================================================================
+        # Calculate and save statistics
+        # ==============================================================================
 
-    # Pearson (product moment) correlation between PCs and between EOFs
-    if loadings.shape[-1] > 1:
-        statistics[height_idx_str]['pcCorrMatrix'] = np.corrcoef(reordered_rot_pcScores.T)
-        statistics[height_idx_str]['loadingsCorrMatrix'] = np.corrcoef(reordered_rot_loadings.T)
+        os.system('echo beginning statistic calculations...')
+        os.system('echo '+str(dt.datetime.now() - script_start))
 
-        # plot and save correlation matrix
-        plot_corr_matrix_table(statistics[height_idx_str]['pcCorrMatrix'], 'pcCorrMatrix', data_var, height_i_label)
-        plot_corr_matrix_table(statistics[height_idx_str]['loadingsCorrMatrix'], 'loadingsCorrMatrix', data_var, height_i_label)
+        # met variables to calculate statistics with
+        # met_vars = mod_data.keys()
+        # print 'removing Q_H for now as it is on different height levels'
+        # for none_met_var in ['longitude', 'latitude', 'level_height', 'time', 'Q_H']:
+        #     if none_met_var in met_vars: met_vars.remove(none_met_var)
+        met_vars = ['RH', 'aerosol_for_visibility', 'air_temperature', 'air_pressure', 'w_wind', 'u_wind', 'v_wind',
+                    'backscatter']
 
-    # Calculate statistics for each var, for each PC.
-    # Includes creating a dictionary of statistics for box plotting, without needing to export the whole
-    #   distribution
-    statistics_height, boxplot_stats_top, boxplot_stats_bot = \
-        pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars, ceil_metadata, height_i_label,
-                             topmeddir, botmeddir)
-    # copy statistics for this height into the full statistics dicionary for all heights
-    statistics[height_idx_str] = deepcopy(statistics_height)
+        # add height dictionary within statistics
+        statistics[height_idx_str] = {}
 
-    # ---------------------------------------------------------
-    # Plotting
-    # ---------------------------------------------------------
-    os.system('echo beginning plotting...')
-    os.system('echo '+str(dt.datetime.now() - script_start))
+        # keep a list of heights for plotting later
+        statistics['level_height'] = np.append(statistics['level_height'], height_i)
+        # statistics->height->EOF->met_var->stat
+        # plots to make...
+        #   bar chart... up vs lower, for each met var, for each height
 
-    # aspect ratio for the map plots
-    #aspectRatio = float(mod_data['longitude'].shape[0]) / float(mod_data['latitude'].shape[0])
-    aspectRatio = 1.857142 # match UKV plots
+        # keep explained variances for unrotated and rotated EOFs
+        statistics[height_idx_str]['unrot_exp_variance'] = perc_var_explained_unrot_keep
+        statistics[height_idx_str]['rot_exp_variance'] = perc_var_explained_ratio_rot
 
-    # 1. colormesh() plot the EOFs for this height
-    # unrotated
-    plot_spatial_output_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
-                                 days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
-                                 perc_var_explained_unrot_keep, 'EOFs')
-    # rotated EOFs
-    plot_spatial_output_height_i(reordered_rot_loadings, ceil_metadata, lons, lats, rotEOFsavedir,
-                                 days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
-                                 perc_var_explained_ratio_rot, 'rotEOFs')
+        # Pearson (product moment) correlation between PCs and between EOFs
+        if loadings.shape[-1] > 1:
+            statistics[height_idx_str]['pcCorrMatrix'] = np.corrcoef(reordered_rot_pcScores.T)
+            statistics[height_idx_str]['loadingsCorrMatrix'] = np.corrcoef(reordered_rot_loadings.T)
 
-    # 2. Explain variance vs EOF number
-    # unrot
-    line_plot_exp_var_vs_EOF(perc_var_explained_unrot_keep, height_i_label, days_iterate, expvarsavedir, 'EOFs')
-    # rotated
-    line_plot_exp_var_vs_EOF(perc_var_explained_ratio_rot, height_i_label, days_iterate, rotexpvarsavedir, 'rotEOFs')
+            # plot and save correlation matrix
+            plot_corr_matrix_table(statistics[height_idx_str]['pcCorrMatrix'], 'pcCorrMatrix', data_var, height_i_label)
+            plot_corr_matrix_table(statistics[height_idx_str]['loadingsCorrMatrix'], 'loadingsCorrMatrix', data_var, height_i_label)
 
-    # 3. PC timeseries
-    # unrotated
-    line_plot_PCs_vs_days_iterate(pcScores, days_iterate, mod_data['time'], pcsavedir, 'PC')
-    # rot PC
-    line_plot_PCs_vs_days_iterate(reordered_rot_pcScores, days_iterate, mod_data['time'], rotPCscoresdir, 'rotPC')
+        # Calculate statistics for each var, for each PC.
+        # Includes creating a dictionary of statistics for box plotting, without needing to export the whole
+        #   distribution
+        statistics_height, boxplot_stats_top, boxplot_stats_bot = \
+            pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars, ceil_metadata, height_i_label,
+                                 topmeddir, botmeddir)
+        # copy statistics for this height into the full statistics dicionary for all heights
+        statistics[height_idx_str] = deepcopy(statistics_height)
 
-    # 4. Boxplot the statistics for each var and PC combination
-    # Create boxplots for each variable subsampled using each PC (better than the bar chart plottng below)
-    stats_height = statistics[height_idx_str]
-    boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stats_height, boxsavedir,
-                  height_i_label, lon_range)
+        # ---------------------------------------------------------
+        # Plotting
+        # ---------------------------------------------------------
+        os.system('echo beginning plotting...')
+        os.system('echo '+str(dt.datetime.now() - script_start))
 
-    # #. Bar chart data - no longer used
-    # create bar charts - one for each var, for each height - showing all PCs - outdated and did work well
-    # for air temp or pressure
-    # bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, barsavedir, height_i_label, lon_range)
-    #os.system('echo finished '+day.strftime('%Y%m%d')+'!')
-    #os.system('echo '+str(dt.datetime.now() - script_start))
+        # aspect ratio for the map plots
+        #aspectRatio = float(mod_data['longitude'].shape[0]) / float(mod_data['latitude'].shape[0])
+        aspectRatio = 1.857142 # match UKV plots
 
-    # ---------------------------------------------------------
-    # Save stats
-    # ---------------------------------------------------------
+        # 1. colormesh() plot the EOFs for this height
+        # unrotated
+        plot_spatial_output_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
+                                     days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
+                                     perc_var_explained_unrot_keep, 'EOFs')
+        # rotated EOFs
+        plot_spatial_output_height_i(reordered_rot_loadings, ceil_metadata, lons, lats, rotEOFsavedir,
+                                     days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
+                                     perc_var_explained_ratio_rot, 'rotEOFs')
 
-    os.system('echo saving statistics to numpy array')
+        # 2. Explain variance vs EOF number
+        # unrot
+        line_plot_exp_var_vs_EOF(perc_var_explained_unrot_keep, height_i_label, days_iterate, expvarsavedir, 'EOFs')
+        # rotated
+        line_plot_exp_var_vs_EOF(perc_var_explained_ratio_rot, height_i_label, days_iterate, rotexpvarsavedir, 'rotEOFs')
 
-    # save statistics 
-    npysavedir_statistics_fullpath = npysavedir+model_type+'_'+data_var+'_'+pcsubsample+'_heightidx'+height_idx_str+'_statistics.npy'
-    np.save(npysavedir_statistics_fullpath, statistics)
+        # 3. PC timeseries
+        # unrotated
+        line_plot_PCs_vs_days_iterate(pcScores, days_iterate, mod_data['time'], pcsavedir, 'PC')
+        # rot PC
+        line_plot_PCs_vs_days_iterate(reordered_rot_pcScores, days_iterate, mod_data['time'], rotPCscoresdir, 'rotPC')
 
-    # save clusters
-    npysavedir_loadings_fullpath = npysavedir +model_type+'_'+data_var + '_' + pcsubsample + '_heightidx'+height_idx_str+'_unrotLoadings.npy'
-    save_dict = {'loadings': unrot_loadings_for_cluster,
-                 'longitude': lons, 'latitude': lats}
-    np.save(npysavedir_loadings_fullpath, save_dict)
+        # 4. Boxplot the statistics for each var and PC combination
+        # Create boxplots for each variable subsampled using each PC (better than the bar chart plottng below)
+        stats_height = statistics[height_idx_str]
+        boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stats_height, boxsavedir,
+                      height_i_label, lon_range)
+
+        # #. Bar chart data - no longer used
+        # create bar charts - one for each var, for each height - showing all PCs - outdated and did work well
+        # for air temp or pressure
+        # bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, barsavedir, height_i_label, lon_range)
+        #os.system('echo finished '+day.strftime('%Y%m%d')+'!')
+        #os.system('echo '+str(dt.datetime.now() - script_start))
+
+        # ---------------------------------------------------------
+        # Save stats
+        # ---------------------------------------------------------
+
+        os.system('echo saving statistics to numpy array')
+
+        # save statistics
+        npysavedir_statistics_fullpath = npysavedir+model_type+'_'+data_var+'_'+pcsubsample+'_heightidx'+height_idx_str+'_statistics.npy'
+        np.save(npysavedir_statistics_fullpath, statistics)
+
+        # save clusters
+        npysavedir_loadings_fullpath = npysavedir +model_type+'_'+data_var + '_' + pcsubsample + '_heightidx'+height_idx_str+'_unrotLoadings.npy'
+        save_dict = {'loadings': unrot_loadings_for_cluster,
+                     'longitude': lons, 'latitude': lats}
+        np.save(npysavedir_loadings_fullpath, save_dict)
 
     os.system('echo END PROGRAM')
     print 'END PROGRAM'
