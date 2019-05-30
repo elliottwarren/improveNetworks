@@ -7,8 +7,6 @@ Uses following website as a guide for PCA:
 https://machinelearningmastery.com/calculate-principal-component-analysis-scratch-python/
 """
 
-#SBATCH --partition=rhel6
-
 # workaround while PYTHONPATH plays up on MO machine
 import sys
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/Utils') #aerFO
@@ -29,16 +27,16 @@ from scipy import stats
 from copy import deepcopy
 import sunrise
 
-import ellUtils.ellUtils as eu
-import ceilUtils.ceilUtils as ceil
-from forward_operator import FOUtils as FO
-from forward_operator import FOconstants as FOcon
+# import ellUtils.ellUtils as eu
+# import ceilUtils.ceilUtils as ceil
+# from forward_operator import FOUtils as FO
+# from forward_operator import FOconstants as FOcon
 
-# import ellUtils as eu
-# import ceilUtils as ceil
-# import FOUtils as FO
-# import FOconstants as FOcon
-# # from Utils import FOconstants as FOcon
+import ellUtils as eu
+import ceilUtils as ceil
+import FOUtils as FO
+import FOconstants as FOcon
+# from Utils import FOconstants as FOcon
 
 def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx, **kwargs):
     """
@@ -878,49 +876,6 @@ def plot_corr_matrix_table(matrix, mattype, data_var, height_i_label):
     plt.close()
     return
 
-# def plot_EOFs_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
-#                        days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var):
-#
-#     """Plot all EOFs for this height - save in eofsavedir (should be a subdirectory based on subsampled input data)"""
-#
-#     for eof_idx in np.arange(eig_vecs_keep.shape[0]):
-#
-#         # etract out eof_i
-#         eof_i = eig_vecs_keep[eof_idx, :]
-#
-#         # NEED to check if this is rotated back correctly (it might need tranposing)
-#         # as it was stacked row/latitude wise above (row1, row2, row3)
-#         # transpose turns shape into (lat, lon) (seems a little odd but needs to be plotted that
-#         #   way by plt.pcolormesh() to get the axis right...
-#         eof_i_reshape = np.transpose(
-#             np.vstack([eof_i[n:n + lat_shape] for n in np.arange(0, X_shape, lat_shape)]))  # 1225
-#
-#         fig, ax = plt.subplots(1, 1, figsize=(4.5 * aspectRatio, 4.5))
-#         plt.pcolormesh(lons, lats, eof_i_reshape)
-#         plt.colorbar()
-#         ax.set_xlabel(r'$Longitude$')
-#         ax.set_ylabel(r'$Latitude$')
-#
-#         # highlight highest value across EOF
-#         eof_i_max_idx = np.where(eof_i_reshape == np.max(eof_i_reshape))
-#         plt.scatter(lons[eof_i_max_idx][0], lats[eof_i_max_idx][0], facecolors='none', edgecolors='black')
-#         plt.annotate('max', (lons[eof_i_max_idx][0], lats[eof_i_max_idx][0]))
-#
-#         # plot each ceilometer location
-#         for site, loc in ceil_metadata.iteritems():
-#             # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
-#             plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
-#             plt.annotate(site, (loc[0], loc[1]))
-#
-#         plt.suptitle('EOF' + str(eof_idx + 1) + '; height=' + height_i_label + str(
-#             len(days_iterate)) + ' cases')
-#         savename = height_i_label +'_EOF' + str(eof_idx + 1) + '_' + data_var + '.png'
-#         plt.savefig(eofsavedir + savename)
-#         plt.close(fig)
-#
-#     return
-#
-
 def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedir,
                        days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
                        perc_var_explained, matrix_type):
@@ -984,8 +939,6 @@ def line_plot_exp_var_vs_EOF(perc_explained, height_i_label, days_iterate, expva
     plt.close(fig)
 
     return
-
-# reordered_rot_pcScores, days_iterate, rotPCscoresdir, 'rotPC'
 
 def line_plot_PCs_vs_days_iterate(scores, days_iterate, time, pcsavedir, pctype):
 
@@ -1173,13 +1126,8 @@ def boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stat
 
 if __name__ == '__main__':
 
-    # day script was ran
+    # time main script was ran
     script_start = dt.datetime.now()
-
-    # https://www.researchgate.net/profile/Jafar_Al-Badarneh/post/Does_anyboby_can_help_me_to_download_
-    # a_PPT/attachment/5a2bc215b53d2f0bba42f44a/AS%3A569610665955328%401512817173845/download/Visualizing
-    # +Data_EOFs.+Part+I_+Python_Matplotlib_Basemap+Part+II_+Empirical+orthogonal+func%3Bons.pdf
-    # slide 25
 
     # ==============================================================================
     # Setup
@@ -1199,45 +1147,25 @@ if __name__ == '__main__':
     # subsampled?
     #pcsubsample = 'full'
     #pcsubsample = '11-18_hr_range'
-    pcsubsample = 'daytime'
-    #pcsubsample = 'nighttime'
+    #pcsubsample = 'daytime'
+    pcsubsample = 'nighttime'
 
     # ------------------
 
     # which modelled data to read in
-    model_type = 'UKV'
-    #model_type = 'LM'
+    #model_type = 'UKV'
+    model_type = 'LM'
     #res = FOcon.model_resolution[model_type]
     Z='21'
 
-    #laptop directories - list needs filtering of MO machine directories
-    maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-    datadir = maindir + 'data/'
-    # ceilDatadir = datadir + 'L1/'
-    modDatadir = datadir + model_type + '/'
-    metadatadir = datadir
-    #metadatadir = '/data/jcmm1/ewarren/metadata/'
-    #modDatadir = datadir
-    pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
-    savedir = pcsubsampledir + data_var+'/'
-    topmeddir = savedir + 'top_median/'
-    botmeddir = savedir + 'bot_median/'
-    eofsavedir = savedir + 'EOFs/'
-    rotEOFsavedir = savedir + 'rotEOFs/'
-    rotPCscoresdir = savedir + 'rotPCs/'
-    pcsavedir = savedir + 'PCs/'
-    expvarsavedir = savedir + 'explained_variance/'
-    rotexpvarsavedir = savedir + 'rot_explained_variance/'
-    boxsavedir = savedir + 'boxplots/'
-    corrmatsavedir = savedir + 'corrMatrix/'
-    npysavedir = '/data/jcmm1/ewarren/npy/'
-
-    # # MO directories
-    # maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
-    # datadir = '/spice/scratch/ewarren/'+model_type+'/full_forecast/'
+    # #laptop directories - list needs filtering of MO machine directories
+    # maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
+    # datadir = maindir + 'data/'
     # # ceilDatadir = datadir + 'L1/'
     # modDatadir = datadir + model_type + '/'
-    # metadatadir = '/data/jcmm1/ewarren/metadata/'
+    # metadatadir = datadir
+    # #metadatadir = '/data/jcmm1/ewarren/metadata/'
+    # #modDatadir = datadir
     # pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
     # savedir = pcsubsampledir + data_var+'/'
     # topmeddir = savedir + 'top_median/'
@@ -1251,6 +1179,26 @@ if __name__ == '__main__':
     # boxsavedir = savedir + 'boxplots/'
     # corrmatsavedir = savedir + 'corrMatrix/'
     # npysavedir = '/data/jcmm1/ewarren/npy/'
+
+    # MO directories
+    maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
+    datadir = '/data/jcmm1/ewarren//full_forecasts/'+model_type+'/'
+    # ceilDatadir = datadir + 'L1/'
+    modDatadir = datadir + '/London/'
+    metadatadir = '/data/jcmm1/ewarren/metadata/'
+    pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
+    savedir = pcsubsampledir + data_var+'/'
+    topmeddir = savedir + 'top_median/'
+    botmeddir = savedir + 'bot_median/'
+    eofsavedir = savedir + 'EOFs/'
+    rotEOFsavedir = savedir + 'rotEOFs/'
+    rotPCscoresdir = savedir + 'rotPCs/'
+    pcsavedir = savedir + 'PCs/'
+    expvarsavedir = savedir + 'explained_variance/'
+    rotexpvarsavedir = savedir + 'rot_explained_variance/'
+    boxsavedir = savedir + 'boxplots/'
+    corrmatsavedir = savedir + 'corrMatrix/'
+    npysavedir = '/data/jcmm1/ewarren/npy/'
 
     # intial test case
     #daystr = ['20180406']
@@ -1275,8 +1223,7 @@ if __name__ == '__main__':
 
     # define dictionary to contain all the statistics drawn from the EOFs and PCs
     # prepare level_height array to store each level height, as they are made
-    statistics = {}
-    statistics['level_height'] = np.array([])
+    statistics = {'level_height': np.array([])}
 
     # keep unrotated PCs for cluster anaylsis in another script
     unrot_loadings_for_cluster = {}
