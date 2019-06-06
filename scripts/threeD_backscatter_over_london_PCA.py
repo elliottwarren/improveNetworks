@@ -27,16 +27,16 @@ from scipy import stats
 from copy import deepcopy
 import sunrise
 
-# import ellUtils.ellUtils as eu
-# import ceilUtils.ceilUtils as ceil
-# from forward_operator import FOUtils as FO
-# from forward_operator import FOconstants as FOcon
+import ellUtils.ellUtils as eu
+import ceilUtils.ceilUtils as ceil
+from forward_operator import FOUtils as FO
+from forward_operator import FOconstants as FOcon
 
-import ellUtils as eu
-import ceilUtils as ceil
-import FOUtils as FO
-import FOconstants as FOcon
-# from Utils import FOconstants as FOcon
+# import ellUtils as eu
+# import ceilUtils as ceil
+# import FOUtils as FO
+# import FOconstants as FOcon
+# # from Utils import FOconstants as FOcon
 
 def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx, **kwargs):
     """
@@ -160,6 +160,11 @@ def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, h
                                                    height_extract_idx=height_idx)
 
         # extract out met variables with a time dimension
+        # met_vars = mod_data_day.keys()
+        # for none_met_var in ['longitude', 'latitude', 'level_height', 'time']:
+        #     if none_met_var in met_vars:
+        #         met_vars.remove(none_met_var)
+
         met_vars = mod_data_day.keys()
         for none_met_var in ['longitude', 'latitude', 'level_height', 'time']:
             if none_met_var in met_vars:
@@ -746,9 +751,7 @@ def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars, cei
 
             # top_x = mod_data[var][top_scores_idx[:,np.newaxis], :, lon_range[:,np.newaxis]].flatten()
             top_x = mod_data[var][top_scores_idx, :, :]
-            top_x = top_x[:, :, lon_range]#.flatten()
             bot_y = mod_data[var][lower_scores_idx, :, :]
-            bot_y = bot_y[:, :, lon_range]#.flatten()
             #else:
             #    raise ValueError('Need to define how to subsample top_x and bot_y from different model ([scores_idx, :, :])?')
 
@@ -780,8 +783,8 @@ def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars, cei
             # repeat array to match dimensions of original data.
             #y = np.squeeze([[[reordered_rot_pcScores[:, i]]*35]*39]).T
             #plt.figure() # (326L, 35L, 39L) = data.
-            #stats.pearsonr(mod_data[var][:, :, lon_range].flatten(), y.flatten())
-            #plt.scatter(mod_data[var][:, :, lon_range].flatten(), y.flatten())
+            #stats.pearsonr(mod_data[var].flatten(), y.flatten())
+            #plt.scatter(mod_data[var].flatten(), y.flatten())
             # plt.figure()
             # plt.hist(top_x, label='top', bins=500, alpha=0.5, color='blue')
             # plt.hist(bot_y, label='bot', bins=500, alpha=0.5, color='red')
@@ -882,6 +885,9 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
 
     """Plot all EOFs for this height - save in eofsavedir (should be a subdirectory based on subsampled input data)"""
 
+    # read in orography data to plot underneath
+
+
     for m_idx in np.arange(matrix.shape[1]):
 
         # etract out eof_i
@@ -897,12 +903,20 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
         eof_i_reshape = np.transpose(
             np.vstack([m_i[n:n + lat_shape] for n in np.arange(0, X_shape, lat_shape)]))  # 1225
 
-        fig, ax = plt.subplots(1, 1, figsize=(4.5 * aspectRatio, 4.5))
-        #fig, ax = plt.subplots(1, 1, figsize=(4.5 * 1.0, 4.5))
-        plt.pcolormesh(lons, lats, eof_i_reshape)
-        plt.colorbar()
-        ax.set_xlabel(r'$Longitude$')
-        ax.set_ylabel(r'$Latitude$')
+        fig, ax = plt.subplots(1, 1, figsize=(6 * aspectRatio, 5))
+        im = plt.pcolormesh(lons, lats, eof_i_reshape, cmap=plt.get_cmap('viridis'))
+        plt.tick_params(direction='out', top=False, right=False, labelsize=13)
+        plt.setp(ax.get_xticklabels(), rotation=35, fontsize=13)
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        plt.colorbar(im, cax=cax)
+
+        # ax.set_xlabel(r'$Longitude$')
+        # ax.set_ylabel(r'$Latitude$')
+        ax.set_xlabel('Longitude [degrees]', fontsize=13)
+        ax.set_ylabel('Latitude [degrees]', fontsize=13)
+        ax.axis('tight')
 
         # highlight highest value across EOF
         #eof_i_max_idx = np.where(eof_i_reshape == np.max(eof_i_reshape))
@@ -917,13 +931,17 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
 
         plt.suptitle(matrix_type + str(m_idx + 1) + '; height=' + height_i_label + '; ' + '%3.2f' % var_exp_i +'%; '+
                      str(len(days_iterate)) + ' cases')
+        # make sure the domain proportions are correct
+        ax.set_aspect(aspectRatio, adjustable=None)
+        plt.tight_layout()
+        #plt.subplots_adjust(bottom=0.1, top=0.9)
         savename = height_i_label +'_'+matrix_type + str(m_idx + 1) + '_' + data_var + '.png'
         plt.savefig(matrixsavedir + savename)
         plt.close(fig)
 
     return
 
-def line_plot_exp_var_vs_EOF(perc_explained, height_i_label, days_iterate, expvarsavedir, matrix_type):
+def line_plot_exp_var_vs_EOF(perc_explained, height_i_label, expvarsavedir, matrix_type):
     """Plot the accumulated explained variance across the kept EOFs"""
 
     #perc_explained_cumsum = np.cumsum(perc_explained)
@@ -940,7 +958,7 @@ def line_plot_exp_var_vs_EOF(perc_explained, height_i_label, days_iterate, expva
 
     return
 
-def line_plot_PCs_vs_days_iterate(scores, days_iterate, time, pcsavedir, pctype):
+def line_plot_PCs_vs_days_iterate(scores, time, pcsavedir, pctype):
 
     """Plot the EOFs paired PCs, against the days_iterate (x axis)"""
 
@@ -1010,7 +1028,7 @@ def line_plot_PCs_vs_days_iterate(scores, days_iterate, time, pcsavedir, pctype)
     return
 
 def boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stats_height, barsavedir,
-                  height_i_label, lon_range):
+                  height_i_label):
 
     """
     Create the boxplots for each variable using pre-calculated statistics. Boxplots show the 'top' and 'bottom'
@@ -1022,7 +1040,6 @@ def boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stat
     :param stats_height:
     :param barsavedir:
     :param height_i_label:
-    :param lon_range:
     :return:
     """
 
@@ -1096,10 +1113,10 @@ def boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stat
         bpbot = ax.bxp(boxplot_stats_bot[var], positions=pos+pos_adjust, widths=width, showfliers=False)
         set_box_color(bpbot, 'red')
         # median and IQR of all data on this level
-        plt.axhline(np.median(mod_data[var][:, :, lon_range]), linestyle='--', linewidth=0.7, color='black', alpha=0.5)
+        plt.axhline(np.median(mod_data[var]), linestyle='--', linewidth=0.7, color='black', alpha=0.5)
         if model_type == 'UKV':
-            plt.axhline(np.percentile(mod_data[var][:, :, lon_range], 75), linestyle='-.', linewidth=0.7, color='black', alpha=0.5)
-            plt.axhline(np.percentile(mod_data[var][:, :, lon_range], 25), linestyle='-.', linewidth=0.7, color='black', alpha=0.5)
+            plt.axhline(np.percentile(mod_data[var], 75), linestyle='-.', linewidth=0.7, color='black', alpha=0.5)
+            plt.axhline(np.percentile(mod_data[var], 25), linestyle='-.', linewidth=0.7, color='black', alpha=0.5)
   
         # prettify, and correct xtick label and position
         plt.xticks(pos, pos)  # sets position and label
@@ -1147,25 +1164,46 @@ if __name__ == '__main__':
     # subsampled?
     #pcsubsample = 'full'
     #pcsubsample = '11-18_hr_range'
-    #pcsubsample = 'daytime'
-    pcsubsample = 'nighttime'
+    pcsubsample = 'daytime'
+    #pcsubsample = 'nighttime'
 
     # ------------------
 
     # which modelled data to read in
-    #model_type = 'UKV'
-    model_type = 'LM'
+    model_type = 'UKV'
+    #model_type = 'LM'
     #res = FOcon.model_resolution[model_type]
     Z='21'
 
-    # #laptop directories - list needs filtering of MO machine directories
-    # maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-    # datadir = maindir + 'data/'
+    #laptop directories - list needs filtering of MO machine directories
+    maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
+    datadir = maindir + 'data/'
+    # ceilDatadir = datadir + 'L1/'
+    modDatadir = datadir + model_type + '/'
+    metadatadir = datadir
+    #metadatadir = '/data/jcmm1/ewarren/metadata/'
+    #modDatadir = datadir
+    pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
+    savedir = pcsubsampledir + data_var+'/'
+    topmeddir = savedir + 'top_median/'
+    botmeddir = savedir + 'bot_median/'
+    eofsavedir = savedir + 'EOFs/'
+    rotEOFsavedir = savedir + 'rotEOFs/'
+    rotPCscoresdir = savedir + 'rotPCs/'
+    pcsavedir = savedir + 'PCs/'
+    expvarsavedir = savedir + 'explained_variance/'
+    rotexpvarsavedir = savedir + 'rot_explained_variance/'
+    boxsavedir = savedir + 'boxplots/'
+    corrmatsavedir = savedir + 'corrMatrix/'
+    npysavedir = maindir + '/data/npy/'
+    windrosedir = savedir + 'windrose/'
+
+    # # MO directories
+    # maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
+    # datadir = '/data/jcmm1/ewarren//full_forecasts/'+model_type+'/'
     # # ceilDatadir = datadir + 'L1/'
-    # modDatadir = datadir + model_type + '/'
-    # metadatadir = datadir
-    # #metadatadir = '/data/jcmm1/ewarren/metadata/'
-    # #modDatadir = datadir
+    # modDatadir = datadir + '/London/'
+    # metadatadir = '/data/jcmm1/ewarren/metadata/'
     # pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
     # savedir = pcsubsampledir + data_var+'/'
     # topmeddir = savedir + 'top_median/'
@@ -1179,40 +1217,17 @@ if __name__ == '__main__':
     # boxsavedir = savedir + 'boxplots/'
     # corrmatsavedir = savedir + 'corrMatrix/'
     # npysavedir = '/data/jcmm1/ewarren/npy/'
-
-    # MO directories
-    maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
-    datadir = '/data/jcmm1/ewarren//full_forecasts/'+model_type+'/'
-    # ceilDatadir = datadir + 'L1/'
-    modDatadir = datadir + '/London/'
-    metadatadir = '/data/jcmm1/ewarren/metadata/'
-    pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
-    savedir = pcsubsampledir + data_var+'/'
-    topmeddir = savedir + 'top_median/'
-    botmeddir = savedir + 'bot_median/'
-    eofsavedir = savedir + 'EOFs/'
-    rotEOFsavedir = savedir + 'rotEOFs/'
-    rotPCscoresdir = savedir + 'rotPCs/'
-    pcsavedir = savedir + 'PCs/'
-    expvarsavedir = savedir + 'explained_variance/'
-    rotexpvarsavedir = savedir + 'rot_explained_variance/'
-    boxsavedir = savedir + 'boxplots/'
-    corrmatsavedir = savedir + 'corrMatrix/'
-    npysavedir = '/data/jcmm1/ewarren/npy/'
+    # windrosedir = savedir + 'windrose/'
 
     # intial test case
-    #daystr = ['20180406']
+    # daystr = ['20180406']
     # daystr = ['20180903'] # low wind speed day (2.62 m/s)
     # current set (missing 20180215 and 20181101) # 08-03
     daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507', # all days
               '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
               '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
               '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
-    
-#    daystr = ['20180406','20180418','20180419','20180420']
-    
-    #daystr = ['20180406','20180418']    
-    
+
     days_iterate = eu.dateList_to_datetime(daystr)
     # a = [i.strftime('%Y%j') for i in days_iterate]
     # '\' \''.join(a)
@@ -1237,7 +1252,7 @@ if __name__ == '__main__':
     for dir_i in [pcsubsampledir, savedir,
                   eofsavedir, pcsavedir, expvarsavedir, rotexpvarsavedir, rotEOFsavedir, rotPCscoresdir,
                   boxsavedir, corrmatsavedir,
-                  topmeddir, botmeddir]:
+                  topmeddir, botmeddir, windrosedir]:
         if os.path.exists(dir_i) == False:
             os.mkdir(dir_i)
 
@@ -1253,7 +1268,7 @@ if __name__ == '__main__':
     ceilsitefile = 'improveNetworksCeils.csv'
     ceil_metadata = ceil.read_ceil_metadata(metadatadir, ceilsitefile)
 
-    height_idx = 12 # np.arange(24)
+    height_idx = 10 # np.arange(24)
     #height_idx = int(sys.argv[1])
     
     #for height_idx in [int(sys.argv[1])]: #np.arange(24):# [0]: #np.arange(24): # max 30 -> ~ 3.1km = too high! v. low aerosol; [8] = 325 m; [23] = 2075 m
@@ -1271,12 +1286,6 @@ if __name__ == '__main__':
         mod_data = read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx,
                                                      subsample=pcsubsample)
 
-    if model_type == 'UKV':
-        lon_range = np.arange(26, 65) # only London area (right hand side of larger domain)
-    elif model_type == 'LM':
-        lon_range = np.arange(mod_data['longitude'].shape[0])
-
-
     # extract out the height for this level
     height_idx_str = str(height_idx)
     height_i = mod_data['level_height']
@@ -1291,19 +1300,13 @@ if __name__ == '__main__':
         exit()
 
     # rotate lon and lat into normal geodetic grid (WGS84)
-    lons, lats = rotate_lon_lat_2D(mod_data['longitude'][lon_range], mod_data['latitude'], model_type)
+    lons, lats = rotate_lon_lat_2D(mod_data['longitude'], mod_data['latitude'], model_type)
 
     # extract out the data (just over London for the UKV)
-    if model_type == 'UKV':
-        if data_var == 'backscatter':
-            data = np.log10(mod_data[data_var][:, :, lon_range])
-        else:# (data_var == 'air_temperature') | (data_var == 'RH'):
-            data = mod_data[data_var][:, :, lon_range]
-    else: # LM
-        if data_var == 'backscatter':
-            data = np.log10(mod_data[data_var])
-        else:# (data_var == 'air_temperature') | (data_var == 'RH'):
-            data = mod_data[data_var]
+    if data_var == 'backscatter':
+        data = np.log10(mod_data[data_var])
+    else:# (data_var == 'air_temperature') | (data_var == 'RH'):
+        data = mod_data[data_var]
 
     # ==============================================================================
     # PCA
@@ -1345,8 +1348,7 @@ if __name__ == '__main__':
     cov_inv = pinv(cov_data)
     os.system('echo finished invert cov matrix...')
     os.system('echo '+str(dt.datetime.now() - script_start))
-    
-    
+
     # cov_data_normed = np.cov(data_m_norm.T)
     #corr_data = np.corrcoef(data_m.T)
 
@@ -1424,8 +1426,8 @@ if __name__ == '__main__':
     os.system('echo '+str(dt.datetime.now() - script_start))
 
     # aspect ratio for the map plots
-    #aspectRatio = float(mod_data['longitude'].shape[0]) / float(mod_data['latitude'].shape[0])
-    aspectRatio = 1.857142 # match UKV plots
+    aspectRatio = float(mod_data['longitude'].shape[0]) / float(mod_data['latitude'].shape[0])
+    #aspectRatio = 1.857142 # match UKV plots
 
     # 1. colormesh() plot the EOFs for this height
     # unrotated
@@ -1439,28 +1441,49 @@ if __name__ == '__main__':
 
     # 2. Explain variance vs EOF number
     # unrot
-    line_plot_exp_var_vs_EOF(perc_var_explained_unrot_keep, height_i_label, days_iterate, expvarsavedir, 'EOFs')
+    line_plot_exp_var_vs_EOF(perc_var_explained_unrot_keep, height_i_label, expvarsavedir, 'EOFs')
     # rotated
-    line_plot_exp_var_vs_EOF(perc_var_explained_ratio_rot, height_i_label, days_iterate, rotexpvarsavedir, 'rotEOFs')
+    line_plot_exp_var_vs_EOF(perc_var_explained_ratio_rot, height_i_label, rotexpvarsavedir, 'rotEOFs')
 
     # 3. PC timeseries
     # unrotated
-    line_plot_PCs_vs_days_iterate(pcScores, days_iterate, mod_data['time'], pcsavedir, 'PC')
+    line_plot_PCs_vs_days_iterate(pcScores,  mod_data['time'], pcsavedir, 'PC')
     # rot PC
-    line_plot_PCs_vs_days_iterate(reordered_rot_pcScores, days_iterate, mod_data['time'], rotPCscoresdir, 'rotPC')
+    line_plot_PCs_vs_days_iterate(reordered_rot_pcScores, mod_data['time'], rotPCscoresdir, 'rotPC')
 
     # 4. Boxplot the statistics for each var and PC combination
     # Create boxplots for each variable subsampled using each PC (better than the bar chart plottng below)
     stats_height = statistics[height_idx_str]
     boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stats_height, boxsavedir,
-                  height_i_label, lon_range)
+                  height_i_label)
 
-    # #. Bar chart data - no longer used
-    # create bar charts - one for each var, for each height - showing all PCs - outdated and did work well
-    # for air temp or pressure
-    # bar_chart_vars(met_vars, mod_data, reordered_rot_pcScores, stats_height, barsavedir, height_i_label, lon_range)
-    #os.system('echo finished '+day.strftime('%Y%m%d')+'!')
-    #os.system('echo '+str(dt.datetime.now() - script_start))
+    # 5. wind rose
+    # # U = np.sqrt((mod_data['rot_u_wind']**2.0) + (mod_data['rot_v_wind']**2.0))
+    # # U_dir = 180 + ((180 / np.pi) * np.arctan2(mod_data['rot_u_wind'], mod_data['rot_v_wind']))
+    # from windrose import WindroseAxes
+    # U = np.sqrt((mod_data['u_wind']**2.0) + (mod_data['v_wind']**2.0))
+    # # arctan2 needs v then u as arguments! Tricksy numpies!
+    # U_dir = 180 + ((180 / np.pi) * np.arctan2(mod_data['v_wind'], mod_data['u_wind']))
+    # # u_wind_i = np.mean(mod_data['u_wind'], axis=(1,2))
+    # # v_wind_i = np.mean(mod_data['v_wind'], axis=(1,2))
+    # # U = np.sqrt((u_wind_i ** 2.0) + (v_wind_i ** 2.0))
+    # # U_dir = 180 + ((180 / np.pi) * np.arctan2(v_wind_i, u_wind_i))
+    # https://github.com/python-windrose/windrose/issues/43
+    # plt.hist([0, 1]);
+    # plt.close()
+    # fig = plt.figure(figsize=(10, 5))
+    # rectangle = [0.1, 0.1, 0.8, 0.75]  # [left, bottom, width, height]
+    # ax = WindroseAxes(fig, rectangle)
+    # fig.add_axes(ax)
+    # # ax.bar(U_dir.flatten(), U.flatten(), normed=True, opening=0.8, edgecolor='white', bins=np.logspace(-1, 1, 10))
+    # ax.bar(U_dir.flatten(), U.flatten(), normed=True, opening=0.8, edgecolor='white', bins=np.arange(0, 15, 2.5))
+    # ax.set_title(pcsubsample, position=(0.5, 1.1))
+    # ax.set_legend()
+    # ax.legend(title="wind speed (m/s)", loc=(1.1, 0), fontsize=12)
+    # savename = windrosedir + 'windrose_' + height_i_label + '.png'
+    # plt.savefig(savename)
+    # plt.close(fig)
+
 
     # ---------------------------------------------------------
     # Save stats
