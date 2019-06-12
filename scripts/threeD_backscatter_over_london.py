@@ -17,18 +17,19 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import matplotlib.cm as cm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from windrose import WindroseAxes
 
 import os
 
-# import ellUtils.ellUtils as eu
-# import ceilUtils.ceilUtils as ceil
-# from forward_operator import FOUtils as FO
-# from forward_operator import FOconstants as FOcon
+import ellUtils.ellUtils as eu
+import ceilUtils.ceilUtils as ceil
+from forward_operator import FOUtils as FO
+from forward_operator import FOconstants as FOcon
 
-import ellUtils as eu
-import ceilUtils as ceil
-import FOUtils as FO
-import FOconstants as FOcon
+# import ellUtils as eu
+# import ceilUtils as ceil
+# import FOUtils as FO
+# import FOconstants as FOcon
 
 def calculate_corner_locations(coord):
 
@@ -173,6 +174,58 @@ def rotate_lon_lat_2D(longitude, latitude, model_type, corner_locs=False):
 
     return lons, lats
 
+def create_wind_rose(u_wind, v_wind, time, height_i_label, windrosedir, t_subsample):
+
+    """
+    Create a windrose from u and v winds. Setup to do windrose from hourly or daily data
+    :param u_wind:
+    :param v_wind:
+    :param time:
+    :param height_i_label:
+    :param windrosedir:
+    :param t_subsample:
+    :return:
+    """
+
+    if t_subsample == 'hour':
+        if os.path.exists(windrosedir + time.strftime('%Y-%m-%d')) == False:
+            os.mkdir(windrosedir + time.strftime('%Y-%m-%d'))
+
+        time_str = time.strftime('%Y-%m-%d_%H')
+        savename = windrosedir + time.strftime('%Y-%m-%d') + '/windrose_' + height_i_label + '_' \
+                   + time.strftime('%Y-%m-%d_%H') + '.png'
+    elif t_subsample == 'daily':
+        time_str = time.strftime('%Y-%m-%d')
+        savename = windrosedir + 'daily/windrose_' + height_i_label + '_' + time.strftime('%Y-%m-%d') + '.png'
+
+    # arctan2 needs v then u as arguments! Tricksy numpies!
+    #U = np.sqrt((u_wind ** 2.0) + (v_wind ** 2.0))
+    #U_dir = 180 + ((180 / np.pi) * np.arctan2(v_wind, u_wind))
+
+    u_wind_i = np.median(u_wind, axis=(1,2))
+    v_wind_i = np.median(v_wind, axis=(1,2))
+    U = np.sqrt((u_wind_i ** 2.0) + (v_wind_i ** 2.0))
+    U_dir = 180 + ((180 / np.pi) * np.arctan2(v_wind_i, u_wind_i))
+    # https://github.com/python-windrose/windrose/issues/43
+    plt.hist([0, 1])
+    plt.close()
+    fig = plt.figure(figsize=(10, 5))
+    rectangle = [0.1, 0.1, 0.8, 0.75]  # [left, bottom, width, height]
+    ax = WindroseAxes(fig, rectangle)
+    fig.add_axes(ax)
+    # bin_range = np.arange(0, 15, 2.5) # higher winds
+    bin_range = np.arange(0.0, 12.0, 2.0)
+    ax.bar(U_dir.flatten(), U.flatten(), normed=True, opening=0.8, edgecolor='white', bins=bin_range)
+    ax.set_title(time_str+'; n='+str(len(U.flatten())), position=(0.5, 1.1))
+    ax.set_legend()
+    ax.legend(title=r'$wind\/speed\/\/(m\/s^{-1})$', loc=(1.1, 0), fontsize=12)
+
+    plt.savefig(savename)
+    print 'saved windrose: ' + savename
+    plt.close(fig)
+
+    return
+
 if __name__ == '__main__':
 
     # ==============================================================================
@@ -187,33 +240,38 @@ if __name__ == '__main__':
     # ------------------
 
     # which modelled data to read in
-    # model_type = 'UKV'
-    model_type = 'LM'
+    model_type = 'UKV'
+    # model_type = 'LM'
     #res = FOcon.model_resolution[model_type]
 
-    # # laptop directories
-    # maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-    # datadir = maindir + 'data/'
-    # modDatadir = datadir + model_type + '/'
-    # savedir = maindir + 'figures/model_runs/cross_sections/'
-    # npysavedir = datadir + 'npy/'
-
-    # MO directories
-    maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
-    datadir = '/data/jcmm1/ewarren//full_forecasts/'+model_type+'/'
-    # ceilDatadir = datadir + 'L1/'
-    modDatadir = datadir + '/London/'
-    metadatadir = '/data/jcmm1/ewarren/metadata/'
+    # laptop directories
+    maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
+    datadir = maindir + 'data/'
+    metadatadir = datadir
+    # modDatadir = datadir + model_type + '/large_domain/'
+    modDatadir = datadir + model_type + '/'
     savedir = maindir + 'figures/model_runs/cross_sections/'
+    windrosedir = savedir + 'wind_rose/'
+    npysavedir = datadir + 'npy/'
+
+    # # MO directories
+    # maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
+    # datadir = '/data/jcmm1/ewarren//full_forecasts/'+model_type+'/'
+    # # ceilDatadir = datadir + 'L1/'
+    # modDatadir = datadir + '/London/'
+    # metadatadir = '/data/jcmm1/ewarren/metadata/'
+    # savedir = maindir + 'figures/model_runs/cross_sections/'
 
     # # test case from unused paper 2 UKV data
     # daystr = ['20180903']`
     # current set (missing 20180215 and 20181101) ## start again at 15-05-2018
-    # daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
-    #           '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
-    #           '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
-    #           '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
-    daystr = ['20181023']
+    daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
+              '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
+              '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
+              '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
+
+    # large domain
+    # daystr = ['20180406', '20180514', '20180622', '20180902']
     days_iterate = eu.dateList_to_datetime(daystr)
     #[i.strftime('%Y%j') for i in days_iterate]
 
@@ -221,8 +279,9 @@ if __name__ == '__main__':
     # Read and process data
     # ==============================================================================
 
-    height_idx = 10
+    height_idx = 4 # 10
 
+    #d = 0; day = days_iterate[0]
     for d, day in enumerate(days_iterate):
 
         # ceilometer list to use
@@ -236,16 +295,12 @@ if __name__ == '__main__':
         mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, 905, metvars=True,
                                                    height_extract_idx=height_idx)
 
-        if model_type == 'UKV':
-            lon_range = np.arange(26, 65)  # only London area (right hand side of larger domain)
-        elif model_type == 'LM':
-            lon_range = np.arange(mod_data['longitude'].shape[0])
-
         # rotate the lon and lats onto a normal geodetic grid (WGS84)
-        lons, lats = rotate_lon_lat_2D(mod_data['longitude'][lon_range], mod_data['latitude'], model_type)
+        lons, lats = rotate_lon_lat_2D(mod_data['longitude'], mod_data['latitude'], model_type)
 
         # extract height
         height_i = mod_data['level_height'][0]
+        height_i_str = str(height_i)
 
         # extract out met variables with a time dimension
         # met_vars = mod_data.keys()
@@ -259,20 +314,18 @@ if __name__ == '__main__':
         # Plotting
         # ==============================================================================
 
-        # find best aspect ratio for the plot so to portray the UKV grid more accurately
-        if model_type == 'UKV':
-            aspectRatio = float(mod_data['longitude'][lon_range].shape[0]) / float(mod_data['latitude'].shape[0])
-        else:
-            aspectRatio = float(mod_data['latitude'].shape[0]) / float(mod_data['longitude'].shape[0])
+        # find best aspect ratio for the plot so to portray the grid cells shape more accurately
+        aspectRatio = float(mod_data['longitude'].shape[0]) / float(mod_data['latitude'].shape[0])
+
 
         # each variable in the dataset
-        for var in met_vars:
+        for var in ['w_wind']: # met_vars:
 
             print 'working on ' + var + '...'
 
             # make directory paths for the output figures
             # pcsubsampledir, then savedir needs to be checked first as they are parent dirs
-            crosssavedir = savedir + var + '/'
+            crosssavedir = savedir + var + '/large_domain/'
             if os.path.exists(crosssavedir) == False:
                 os.mkdir(crosssavedir)
 
@@ -286,38 +339,35 @@ if __name__ == '__main__':
             # Extract is transposed when indexed like this but
             # vmin = np.percentile(mod_data[var][:, height_idx, :, lon_range], 2)
             # vmax = np.percentile(mod_data[var][:, height_idx, :, lon_range], 98)
-            vmin = np.percentile(mod_data[var][:, :, :, lon_range], 2)
-            vmax = np.percentile(mod_data[var][:, :, :, lon_range], 98)
+            vmin = np.percentile(mod_data[var], 2)
+            vmax = np.percentile(mod_data[var], 98)
 
+            # make a daily wind rose
+            # save directory
+            windrosedir_daily = windrosedir + 'daily/'
+            create_wind_rose(mod_data['u_wind'], mod_data['v_wind'], day, height_i_str, windrosedir, 'daily')
+
+            hr_idx =23; hr = mod_data['time'][23] # night-time gravity wave pattern
             for hr_idx, hr in enumerate(mod_data['time'][:-1]):  # miss out midnight of the next day...
-                fig = plt.figure(figsize=(6.5, 3.5))
-                ax = fig.add_subplot(111, aspect=aspectRatio)
+                # fig = plt.figure(figsize=(6.5, 3.5))
+                # ax = fig.add_subplot(111, aspect=aspectRatio)
+                fig = plt.figure(figsize=(8.5, 5))
+                ax = fig.add_subplot(111)
 
 
                 # using mod_data[var][hr_idx, :, :, lon_range] does not work as two dimensions are being indexed
                 #      at once! This rearanges the dimensions! Use lon_range[0]:lon_range[-1]+1 instead
-                data = np.squeeze(mod_data[var][hr_idx, :, :, lon_range[0]:lon_range[-1]+1])
-                # subsample further if UKV, to trim off some of the domain
-                # if model_type == 'UKV':
-                #     data = data[:, lon_range]
-
-                # fixed colourbar
-                # mesh = plt.pcolormesh(lons, lats, mod_data['bsc_attenuated'][hr_idx, height_idx, :, :],
-                #                       norm=LogNorm(), cmap=cm.get_cmap('jet'))
-
-                # if (hr_idx > 0) & (height_idx > 0):
-                #     mesh.set_array(data.ravel())
-                #     fig.canvas.draw()
-                #     fig.canvas.flush_events()
-
+                #data = np.squeeze(mod_data[var][hr_idx, :, :28, 50:])
+                data = np.squeeze(mod_data[var][hr_idx, :, :, :])
 
                 if var == 'backscatter':
-                    mesh = ax.pcolormesh(lons, lats, data, vmin=vmin, vmax=vmax,
+                    mesh = ax.pcolormesh(lons[:28, 50:], lats[:28, 50:], data[:28, 50:], vmin=vmin, vmax=vmax,
                                           norm=LogNorm(), cmap=cm.get_cmap('jet'))
                 else:
+                    # mesh = ax.pcolormesh(lons[:28, 50:], lats[:28, 50:], data[:28, 50:], vmin=vmin, vmax=vmax,
                     mesh = ax.pcolormesh(lons, lats, data, vmin=vmin, vmax=vmax,
                                           cmap=cm.get_cmap('jet'))
-                ax.set_aspect(aspectRatio)
+                #ax.set_aspect(aspectRatio)
 
                 the_divider = make_axes_locatable(ax)
                 color_axis = the_divider.append_axes("right", size="5%", pad=0.1)
@@ -332,7 +382,6 @@ if __name__ == '__main__':
 
                 ax.set_xlabel(r'$Longitude$')
                 ax.set_ylabel(r'$Latitude$')
-                # plt.suptitle(hr.strftime('%Y-%m-%d_%H') + '; height='+str(mod_data['level_height'][height_idx])+'m')
                 plt.suptitle(hr.strftime('%Y-%m-%d_%H') + '; height='+str(height_i)+'m')
                 savesubdir = crosssavedir + hr.strftime('%Y-%m-%d') + '/' # sub dir within the savedir
                 savename = '{:04.0f}'.format(height_i) + 'm_'+hr.strftime('%Y-%m-%d_%H')+'.png'
