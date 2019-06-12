@@ -19,6 +19,7 @@ import matplotlib
 #matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cbook as cbook
+import matplotlib.patheffects as PathEffects
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import os
 import datetime as dt
@@ -26,6 +27,7 @@ import pandas as pd
 from scipy import stats
 from copy import deepcopy
 import sunrise
+import iris
 
 import ellUtils.ellUtils as eu
 import ceilUtils.ceilUtils as ceil
@@ -881,12 +883,43 @@ def plot_corr_matrix_table(matrix, mattype, data_var, height_i_label):
 
 def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedir,
                        days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
-                       perc_var_explained, matrix_type):
+                       perc_var_explained, matrix_type, model_type):
 
     """Plot all EOFs for this height - save in eofsavedir (should be a subdirectory based on subsampled input data)"""
 
-    # read in orography data to plot underneath
+    def read_orography(model_type):
 
+        """
+        Load in orography from NWP models
+        :param model_type:
+        :return: orog (cube)
+
+        Spacing and ranges need slightly changing as orography lat and lons are not precisely equal to those saved
+        from the UKV elsewhere, because of numerical precision. Each defined orog lat and lon range, with the
+        subsequent output was checked against the UKV to ensure they match.
+
+        """
+
+        if model_type == 'UKV':
+            ukvdatadir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter' \
+                         '/improveNetworks/data/UKV/'
+            spacing = 0.0135 # spacing between lons and lats in rotated space
+            UK_lat_constraint = iris.Constraint(grid_latitude=lambda cell: -1.2326999-spacing <= cell <= -0.7872) # +spacing
+            UK_lon_constraint = iris.Constraint(grid_longitude=lambda cell: 361.21997 <= cell <= 361.73297+spacing)
+            orog = iris.load_cube(ukvdatadir + 'UKV_orography.nc', constraint=UK_lat_constraint & UK_lon_constraint)
+
+        elif model_type == 'LM':
+            orogdatadir = ''
+            orog_con = iris.Constraint(name='surface_altitude',
+                                       coord_values={
+                                           'grid_latitude': lambda cell: -1.214 - spacing < cell < -0.776,
+                                           'grid_longitude': lambda cell: 1.21 < cell < 1.732 + spacing})
+            orog = iris.load_cube(orogdatadir + '20181022T2100Z_London_charts', orog_con)
+
+        return orog
+
+    # read in orography data to plot underneath EOFs
+    orog = read_orography(model_type)
 
     for m_idx in np.arange(matrix.shape[1]):
 
@@ -904,13 +937,11 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
             np.vstack([m_i[n:n + lat_shape] for n in np.arange(0, X_shape, lat_shape)]))  # 1225
 
         fig, ax = plt.subplots(1, 1, figsize=(6 * aspectRatio, 5))
-        im = plt.pcolormesh(lons, lats, eof_i_reshape, cmap=plt.get_cmap('viridis'))
+        cmap_i = plt.get_cmap('viridis')
+        # cmap_i = plt.get_cmap('Blues')
+        im = plt.pcolormesh(lons, lats, eof_i_reshape, cmap=cmap_i)
         plt.tick_params(direction='out', top=False, right=False, labelsize=13)
         plt.setp(ax.get_xticklabels(), rotation=35, fontsize=13)
-
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
-        plt.colorbar(im, cax=cax)
 
         # ax.set_xlabel(r'$Longitude$')
         # ax.set_ylabel(r'$Latitude$')
@@ -923,18 +954,36 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
         #plt.scatter(lons[eof_i_max_idx][0], lats[eof_i_max_idx][0], facecolors='none', edgecolors='black')
         #plt.annotate('max', (lons[eof_i_max_idx][0], lats[eof_i_max_idx][0]))
 
+        # plot orography
+        #levels = np.arange(60, 270, 30)
+        cont = ax.contour(lons, lats, orog.data, cmap='OrRd') # cmap='YlOrRd'
+        ax.clabel(cont, fmt='%1d') # , color='black'
+
+        # dash the lowest orographic contour
+        zc = cont.collections[0]
+        plt.setp(zc, linestyle='--')
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=-0.1)
+        plt.colorbar(im, cax=cax, format='%1.3f')
+        # plt.colorbar(cont, cax=cax)
+
         # plot each ceilometer location
         for site, loc in ceil_metadata.iteritems():
             # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
-            plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
-            plt.annotate(site, (loc[0], loc[1]))
+            ax.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
+            ax.annotate(site, (loc[0], loc[1]))
+            # txt.set_path_effects([PathEffects.withStroke(linewidth=1, foreground='w')])
+
+        # add % variance explained
+        eu.add_at(ax, '%2.1f' % var_exp_i + ' %', loc=1, frameon=True)
 
         plt.suptitle(matrix_type + str(m_idx + 1) + '; height=' + height_i_label + '; ' + '%3.2f' % var_exp_i +'%; '+
                      str(len(days_iterate)) + ' cases')
         # make sure the domain proportions are correct
         ax.set_aspect(aspectRatio, adjustable=None)
-        plt.tight_layout()
-        #plt.subplots_adjust(bottom=0.1, top=0.9)
+        #plt.tight_layout()
+        plt.subplots_adjust(bottom=0.1, top=0.9, left=0.1)
         savename = height_i_label +'_'+matrix_type + str(m_idx + 1) + '_' + data_var + '.png'
         plt.savefig(matrixsavedir + savename)
         plt.close(fig)
@@ -1165,7 +1214,7 @@ if __name__ == '__main__':
     #pcsubsample = 'full'
     #pcsubsample = '11-18_hr_range'
     pcsubsample = 'daytime'
-    #pcsubsample = 'nighttime'
+    # pcsubsample = 'nighttime'
 
     # ------------------
 
@@ -1268,7 +1317,8 @@ if __name__ == '__main__':
     ceilsitefile = 'improveNetworksCeils.csv'
     ceil_metadata = ceil.read_ceil_metadata(metadatadir, ceilsitefile)
 
-    height_idx = 10 # np.arange(24)
+    # 10=471.7m # np.arange(24) # 4 = 111.7m
+    height_idx = 4
     #height_idx = int(sys.argv[1])
     
     #for height_idx in [int(sys.argv[1])]: #np.arange(24):# [0]: #np.arange(24): # max 30 -> ~ 3.1km = too high! v. low aerosol; [8] = 325 m; [23] = 2075 m
@@ -1433,11 +1483,11 @@ if __name__ == '__main__':
     # unrotated
     plot_spatial_output_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
                                  days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
-                                 perc_var_explained_unrot_keep, 'EOFs')
+                                 perc_var_explained_unrot_keep, 'EOFs', model_type)
     # rotated EOFs
     plot_spatial_output_height_i(reordered_rot_loadings, ceil_metadata, lons, lats, rotEOFsavedir,
                                  days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
-                                 perc_var_explained_ratio_rot, 'rotEOFs')
+                                 perc_var_explained_ratio_rot, 'rotEOFs', model_type)
 
     # 2. Explain variance vs EOF number
     # unrot
@@ -1458,31 +1508,30 @@ if __name__ == '__main__':
                   height_i_label)
 
     # 5. wind rose
-    # # U = np.sqrt((mod_data['rot_u_wind']**2.0) + (mod_data['rot_v_wind']**2.0))
-    # # U_dir = 180 + ((180 / np.pi) * np.arctan2(mod_data['rot_u_wind'], mod_data['rot_v_wind']))
-    # from windrose import WindroseAxes
-    # U = np.sqrt((mod_data['u_wind']**2.0) + (mod_data['v_wind']**2.0))
-    # # arctan2 needs v then u as arguments! Tricksy numpies!
-    # U_dir = 180 + ((180 / np.pi) * np.arctan2(mod_data['v_wind'], mod_data['u_wind']))
-    # # u_wind_i = np.mean(mod_data['u_wind'], axis=(1,2))
-    # # v_wind_i = np.mean(mod_data['v_wind'], axis=(1,2))
-    # # U = np.sqrt((u_wind_i ** 2.0) + (v_wind_i ** 2.0))
-    # # U_dir = 180 + ((180 / np.pi) * np.arctan2(v_wind_i, u_wind_i))
+    from windrose import WindroseAxes
+    U = np.sqrt((mod_data['u_wind']**2.0) + (mod_data['v_wind']**2.0))
+    # arctan2 needs v then u as arguments! Tricksy numpies!
+    U_dir = 180 + ((180 / np.pi) * np.arctan2(mod_data['v_wind'], mod_data['u_wind']))
+    # u_wind_i = np.mean(mod_data['u_wind'], axis=(1,2))
+    # v_wind_i = np.mean(mod_data['v_wind'], axis=(1,2))
+    # U = np.sqrt((u_wind_i ** 2.0) + (v_wind_i ** 2.0))
+    # U_dir = 180 + ((180 / np.pi) * np.arctan2(v_wind_i, u_wind_i))
     # https://github.com/python-windrose/windrose/issues/43
-    # plt.hist([0, 1]);
-    # plt.close()
-    # fig = plt.figure(figsize=(10, 5))
-    # rectangle = [0.1, 0.1, 0.8, 0.75]  # [left, bottom, width, height]
-    # ax = WindroseAxes(fig, rectangle)
-    # fig.add_axes(ax)
-    # # ax.bar(U_dir.flatten(), U.flatten(), normed=True, opening=0.8, edgecolor='white', bins=np.logspace(-1, 1, 10))
-    # ax.bar(U_dir.flatten(), U.flatten(), normed=True, opening=0.8, edgecolor='white', bins=np.arange(0, 15, 2.5))
-    # ax.set_title(pcsubsample, position=(0.5, 1.1))
-    # ax.set_legend()
-    # ax.legend(title="wind speed (m/s)", loc=(1.1, 0), fontsize=12)
-    # savename = windrosedir + 'windrose_' + height_i_label + '.png'
-    # plt.savefig(savename)
-    # plt.close(fig)
+    plt.hist([0, 1])
+    plt.close()
+    fig = plt.figure(figsize=(10, 5))
+    rectangle = [0.1, 0.1, 0.8, 0.75]  # [left, bottom, width, height]
+    ax = WindroseAxes(fig, rectangle)
+    fig.add_axes(ax)
+    # bin_range = np.arange(0, 15, 2.5) # higher winds
+    bin_range = np.arange(0.0, 12.0, 2.0)
+    ax.bar(U_dir.flatten(), U.flatten(), normed=True, opening=0.8, edgecolor='white', bins=bin_range)
+    ax.set_title(pcsubsample, position=(0.5, 1.1))
+    ax.set_legend()
+    ax.legend(title="wind speed (m/s)", loc=(1.1, 0), fontsize=12)
+    savename = windrosedir + 'windrose_' + height_i_label + '.png'
+    plt.savefig(savename)
+    plt.close(fig)
 
 
     # ---------------------------------------------------------
