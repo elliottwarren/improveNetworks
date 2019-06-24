@@ -66,41 +66,26 @@ if __name__ == '__main__':
     # subsampled?
     #pcsubsample = 'full'
     #pcsubsample = '11-18_hr_range'
-    #pcsubsample = 'daytime'
-    pcsubsample = 'nighttime'
+    pcsubsample = 'daytime'
+    #pcsubsample = 'nighttime'
 
     # cluster type - to match the AgglomerativeClustering function and used in savename
     linkage_type = 'ward'
 
     # number of clusters
-    n_clusters = 50
+    n_clusters = 7
 
     # ------------------
 
     # which modelled data to read in
-    #model_type = 'UKV'
-    model_type = 'LM'
+    model_type = 'UKV'
+    #model_type = 'LM'
 
     # Laptop directories
-    # maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-    # datadir = maindir + 'data/'
-    # npydatadir = datadir + 'npy/'
-    # ukvdatadir = maindir + 'data/UKV/'
-    # ceilDatadir = datadir + 'L1/'
-    # modDatadir = datadir + model_type + '/'
-    # pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
-    # savedir = pcsubsampledir + data_var+'/'
-    # clustersavedir = savedir + 'cluster_analysis/'
-    # histsavedir = clustersavedir + 'histograms/'
-    # npysavedir = datadir + 'npy/PCA/'
-
-    # MO directories
-    maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
-    datadir = '/data/jcmm1/ewarren/'
-    orogdatadir = '/data/jcmm1/ewarren/ancillaries/'
-    murkdatadir = '/data/jcmm1/ewarren/ancillaries/murk_aer/'+model_type+'/'
+    maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
+    datadir = maindir + 'data/'
     npydatadir = datadir + 'npy/'
-    metadatadir = datadir + 'metadata/'
+    ukvdatadir = maindir + 'data/UKV/'
     ceilDatadir = datadir + 'L1/'
     modDatadir = datadir + model_type + '/'
     pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
@@ -108,6 +93,21 @@ if __name__ == '__main__':
     clustersavedir = savedir + 'cluster_analysis/'
     histsavedir = clustersavedir + 'histograms/'
     npysavedir = datadir + 'npy/PCA/'
+
+    # # MO directories
+    # maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
+    # datadir = '/data/jcmm1/ewarren/'
+    # orogdatadir = '/data/jcmm1/ewarren/ancillaries/'
+    # murkdatadir = '/data/jcmm1/ewarren/ancillaries/murk_aer/'+model_type+'/'
+    # npydatadir = datadir + 'npy/'
+    # metadatadir = datadir + 'metadata/'
+    # ceilDatadir = datadir + 'L1/'
+    # modDatadir = datadir + model_type + '/'
+    # pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
+    # savedir = pcsubsampledir + data_var+'/'
+    # clustersavedir = savedir + 'cluster_analysis/'
+    # histsavedir = clustersavedir + 'histograms/'
+    # npysavedir = datadir + 'npy/PCA/'
 
     # ==============================================================================
     # Read
