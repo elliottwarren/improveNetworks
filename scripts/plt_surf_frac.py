@@ -13,6 +13,7 @@ sys.path.append('/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNe
 
 import iris
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 import iris.plot as iplt
 
 import iris.palette
@@ -29,7 +30,8 @@ if __name__ == '__main__':
     #data_to_plot = 'orography'
     data_to_plot = 'murk_aer'
 
-    model_type = 'LM'
+    model_type = 'UKV'
+    #model_type = 'LM'
 
     # veg_pseudo_levels=1,2,3,4,5,7,8,9,601,602
     SurfTypeD={1:'Broadleaf trees', 2:'Needleleaf trees', 3:'C3 (temperate) grass',
@@ -45,7 +47,7 @@ if __name__ == '__main__':
 
     if model_type == 'UKV':
         maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-        datadir = maindir + 'data/UKV/'
+        datadir = maindir + 'data/UKV/ancillaries/'
         npydatadir = maindir + '/data/npy/'
         savedir = maindir + 'figures/model_ancillaries/'+model_type+'/'
     elif model_type == 'LM': # on MO machine
@@ -54,21 +56,11 @@ if __name__ == '__main__':
         #npydatadir = maindir + '/data/npy/'
         savedir = maindir + 'figures/ancillaries/'+model_type+'/'
 
-    # Model Resolution
+    # Extract domain constraints from UKV and LM the domain over London
     if model_type == 'UKV':
-        res = '1p5km'
-    elif model_type == 'LM':
-        # Model Resolution
-        res = '0p333km'
-
-
-    # Extract from UKV and LM the domain over London
-    if model_type == 'UKV':
-        spacing = 0.0135  # spacing between lons and lats in rotated space
         orog_con = iris.Constraint(name='surface_altitude',
-                                   coord_values={
-                                       'grid_latitude': lambda cell: -1.2326999 - spacing <= cell <= -0.7737 + spacing,
-                                       'grid_longitude': lambda cell: 361.21997 <= cell <= 361.73297 + spacing})
+                                   coord_values= {'grid_latitude': lambda cell: -1.0326999 <= cell <= -0.2738,
+                                                  'grid_longitude': lambda cell: 360.41997 <= cell <= 361.733})
     elif model_type == 'LM':
         spacing = 0.003 # checked
         # checked that it perfectly matches LM data extract (setup is different to UKV orog_con due to
@@ -80,7 +72,7 @@ if __name__ == '__main__':
     # name='surface_altitude',
     # UK_lon_constraint =
     # aspect ratio for plotting
-    aspectRatio = 1.8571428571428572  # from my other plots
+    #aspectRatio = 1.8571428571428572  # from my other plots
 
     if data_to_plot == 'surface type':
 
@@ -90,7 +82,7 @@ if __name__ == '__main__':
         surf_frac=iris.load_cube(datadir + 'ukv_surf_frac_types.nc',constraint=UK_lat_constraint & UK_lon_constraint)
         for i,iid in enumerate(surf_frac.coord('pseudo_level').points):
             if iid not in [4, 9]: # ignore ice and tropical grass
-                plt.subplots(1,1, figsize=(4.5 * aspectRatio, 4.5))
+                plt.subplots(1,1, figsize=(5, 4.5))
                 im=iplt.pcolormesh(surf_frac[i],cmap=temp_cmap)
                 plt.colorbar(im,orientation='vertical')
                 plt.gca().coastlines('10m')
@@ -101,7 +93,7 @@ if __name__ == '__main__':
     elif data_to_plot == 'orography': # orography
 
         if model_type == 'UKV':
-            orog = iris.load_cube(datadir + 'UKV_orography.nc', constraint=UK_lat_constraint & UK_lon_constraint)
+            orog = iris.load_cube(datadir + 'UKV_orography.nc', orog_con)
         elif model_type == 'LM':
             # new_data = iris.load_cube(datadir + '20181022T2100Z_London_charts', 'surface_altitude', constraint=orog_con)
             orog = iris.load_cube(datadir + '20181022T2100Z_London_charts', orog_con) # orog_con
@@ -110,7 +102,6 @@ if __name__ == '__main__':
         orog_rot_lats = orog.coord('grid_latitude').points
         orog_rot_lons = orog.coord('grid_longitude').points
         lons, lats = rotate_lon_lat_2D(orog_rot_lons, orog_rot_lats, model_type)
-
 
         temp_cmap = plt.get_cmap('terrain')
         plt.subplots(1, 1, figsize=(4.5 * aspectRatio, 4.5))
@@ -132,7 +123,13 @@ if __name__ == '__main__':
 
         # load data
         if model_type == 'UKV':
-            murk_aer = np.load(npydatadir + model_type + '_murk_ancillaries.npy').flatten()[0]
+            # checked it matches other UKV output: slight differences in domain constraint number due to different
+            #   number precision error in the saved files...
+            murk_con = iris.Constraint(coord_values=
+                                       {'grid_latitude': lambda cell: -1.2327999 <= cell <= -0.7738,
+                                        'grid_longitude': lambda cell: 361.21997 <= cell <= 361.733})
+            murk_aer = iris.load_cube(datadir + 'UKV_murk_surface.nc', murk_con)
+            murk_aer = murk_aer[6, :, :] # get July
         elif model_type == 'LM':
 
             spacing = 0.003  # checked
@@ -148,18 +145,36 @@ if __name__ == '__main__':
         rot_lats = murk_aer.coord('grid_latitude').points
         rot_lons = murk_aer.coord('grid_longitude').points# - 360.0 - removing 360 has no real effect on rotation
         lons, lats = rotate_lon_lat_2D(rot_lons, rot_lats, model_type)
+        # aspectRatio = float(lons.shape[0]) / float(lats.shape[1])
+        aspectRatio = float(lons.shape[1]) / float(lats.shape[0])
 
-        for height_idx in np.arange(8):
-            #height_idx = 4# 10
-            height = murk_aer.coord('level_height').points[height_idx]
-            month_idx = 0
-            murk_data = murk_aer.data[month_idx, height_idx, :, :]
-            plt.subplots(1, 1, figsize=(4.5 * aspectRatio, 4.5))
-            im = plt.pcolormesh(lons, lats, murk_data, cmap=temp_cmap, vmin=0, vmax=0.18)
-            plt.colorbar(im, orientation='vertical')
-            #plt.gca().coastlines('10m')
-            plt.title('murk_aer')
-            savename = 'UKV_murk_aer_'+str(month_idx+1)+'_'+str(height)+'m.png'
-            plt.savefig(murksavedir + savename)
-            plt.close()
+        #height_idx = 4# 10
+        #height = murk_aer.coord('level_height').points[height_idx]
+        month_idx = 0
+        # murk_data = murk_aer.data[month_idx, height_idx, :, :]
+        murk_data = murk_aer.data
+        # plt.subplots(1, 1, figsize=(4.5 * aspectRatio, 4.5))
+        fig, ax = plt.subplots(1, 1, figsize=(6 * aspectRatio, 5))
+        temp_cmap = plt.get_cmap('jet')
+        im = plt.pcolormesh(lons, lats, murk_data, cmap=temp_cmap, vmin=0, vmax=0.18)
+        plt.tick_params(direction='out', top=False, right=False, labelsize=13)
+        plt.setp(ax.get_xticklabels(), rotation=35, fontsize=13)
+        ax.set_xlabel('Longitude [degrees]', fontsize=13)
+        ax.set_ylabel('Latitude [degrees]', fontsize=13)
+        ax.axis('tight')
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=-0.1)
+        plt.colorbar(im, cax=cax, format='%1.3f')
+
+        ax.set_aspect(aspectRatio, adjustable=None)
+        #plt.tight_layout()
+        plt.subplots_adjust(bottom=0.1, top=0.9, left=0.1)
+
+        #plt.gca().coastlines('10m')
+        #plt.title('murk_aer')
+        # savename = 'UKV_murk_aer_'+str(month_idx+1)+'_'+str(height)+'m.png'
+        savename = model_type+'_murk_aer_July_5m.png'
+        plt.savefig(murksavedir + savename)
+        plt.close()
 
