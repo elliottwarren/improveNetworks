@@ -19,6 +19,7 @@ import matplotlib
 #matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cbook as cbook
+import matplotlib.ticker as ticker
 import matplotlib.patheffects as PathEffects
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import os
@@ -310,7 +311,7 @@ def flip_vector_sign(matrix):
 
     for i in range(matrix.shape[1]):  # columnwise
         if matrix[:, i].sum() < 0:
-            print 'EOF'+str(i+1) + ' is being flipped'
+            #print 'EOF'+str(i+1) + ' is being flipped'
             matrix[:, i] *= -1.0
     return matrix
 
@@ -725,8 +726,6 @@ def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars, cei
     # for each meteorological variable: carry out the statistics
     for var in met_vars:
 
-        print var
-
         # add dictionary for this var
         # statistics[height_idx_str][var] = {}
         boxplot_stats_top[var] = []  # list so it keeps its order (PC1, PC2...)
@@ -1133,55 +1132,84 @@ def boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stat
 
     def set_box_color(bp, color):
         # set colour of the boxplots
-        plt.setp(bp['boxes'], color=color)
-        plt.setp(bp['whiskers'], color=color)
-        plt.setp(bp['caps'], color=color)
-        plt.setp(bp['medians'], color=color)
+        plt.setp(bp['boxes'], color=color, linestyle ='-', linewidth=2.0)
+        plt.setp(bp['whiskers'], color=color, linestyle ='-', linewidth=2.0)
+        plt.setp(bp['caps'], color=color, linestyle ='-', linewidth=2.0)
+        plt.setp(bp['medians'], color=color, linestyle ='-', linewidth=2.0)
 
         return
+
+    def create_y_label(var_i):
+
+        var_i_split = var_i.split('_')
+
+        if var_i_split[-1] == 'wind':
+            label = var_i_split[-2] + ' ' + r'[$m\/s^{-1}$]'
+        else:
+            label = var_i
+
+        return label
 
     # boxplot for each variable
     
     for var in met_vars:
 
+        #var = 'rot_v_wind'
+        print var
+
+        # get y label
+        y_label = create_y_label(var)
+
         # create stars to signifiy how statistically significant each test was
         # ** = 99 %, * = 95 %, no star = not significant
         mw_p = create_stats_significant_stars(boxplot_stats_bot, var, stats_height)
 
-        fig = plt.figure()
+        fig = plt.figure(figsize=(5, 4))
         ax = plt.gca()
         # boxplot from premade stats
-        width = 0.2
+        width = 0.22
         # posotion of boxplots.
         # Adjust the central position of boxplots so pairs do not overlap
         pos = np.array(range(len(boxplot_stats_top[var])))+1  # +1 so it starts with xlabel starts PC1, not PC0...
         pos_adjust = (0.6*width)
-        # plot
-        bptop = ax.bxp(boxplot_stats_top[var], positions=pos-pos_adjust, widths=width, showfliers=False)
-        set_box_color(bptop, 'blue')
-        bpbot = ax.bxp(boxplot_stats_bot[var], positions=pos+pos_adjust, widths=width, showfliers=False)
-        set_box_color(bpbot, 'red')
+
         # median and IQR of all data on this level
-        plt.axhline(np.median(mod_data[var]), linestyle='--', linewidth=0.7, color='black', alpha=0.5)
+        plt.axhline(np.median(mod_data[var]), linestyle='--', linewidth=1.5, color='black', alpha=0.5)
         if model_type == 'UKV':
-            plt.axhline(np.percentile(mod_data[var], 75), linestyle='-.', linewidth=0.7, color='black', alpha=0.5)
-            plt.axhline(np.percentile(mod_data[var], 25), linestyle='-.', linewidth=0.7, color='black', alpha=0.5)
+            plt.axhline(np.percentile(mod_data[var], 75), linestyle='-.', linewidth=1.5, color='black', alpha=0.5)
+            plt.axhline(np.percentile(mod_data[var], 25), linestyle='-.', linewidth=1.5, color='black', alpha=0.5)
+
+        # boxplots
+        boxprops = dict(linestyle='-', linewidth=1.5)
+        bptop = ax.bxp(boxplot_stats_top[var], positions=pos-pos_adjust, widths=width, showfliers=False,
+                       boxprops=boxprops)
+        set_box_color(bptop, 'blue')
+        bpbot = ax.bxp(boxplot_stats_bot[var], positions=pos+pos_adjust, widths=width, showfliers=False,
+                       boxprops=boxprops)
+        set_box_color(bpbot, 'red')
   
         # prettify, and correct xtick label and position
         plt.xticks(pos, pos)  # sets position and label
-        plt.ylabel(var)
-        plt.xlabel('PC')
-        # n samples equal across PCs, vars and between top and bottom distributions. Therefore just use this var rotPC1
-        plt.suptitle('median')#n_per_dist='+boxplot_stats_top[var]['rotPC1']['n_top'])
-        plt.axis('tight')
+        plt.tick_params(direction='out', top=False, right=False, labelsize=15)
+        plt.ylabel(y_label, fontsize=15, labelpad=0)
+        plt.xlabel('EOF', fontsize=15)
+        #plt.axis('tight')
+        plt.xlim([pos[0]-(2*width), pos[-1]+(2*width)])
 
-        # add sample size at the top of plot for each box and whiskers
-        top = ax.get_ylim()[1]
-        for tick, label in zip(range(len(pos)), ax.get_xticklabels()):
-            k = tick % 2
-            # ax.text(pos[tick], top - (top * 0.08), upperLabels[tick], # not AE
-            ax.text(pos[tick], top - (top * 0.1), mw_p[tick],  # AE
-                    horizontalalignment='center')#size='x-small'
+        # # u and v winds
+        #plt.ylim([-10.5, 10.5])
+        #ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%3.0f'))
+        # eu.add_at(ax, '%s' % x_label , loc=2, frameon=True, size=13) # extra
+
+        plt.tight_layout()
+
+        # # add sample size at the top of plot for each box and whiskers
+        # top = ax.get_ylim()[1]
+        # for tick, label in zip(range(len(pos)), ax.get_xticklabels()):
+        #     k = tick % 2
+        #     # ax.text(pos[tick], top - (top * 0.08), upperLabels[tick], # not AE
+        #     ax.text(pos[tick], top - (top * 0.1), mw_p[tick],  # AE
+        #             horizontalalignment='center')#size='x-small'
 
         savename = barsavedir + 'median_' + var + '_' + height_i_label + '_rotPCs.png'
         plt.savefig(savename)
@@ -1479,27 +1507,27 @@ if __name__ == '__main__':
     aspectRatio = float(mod_data['longitude'].shape[0]) / float(mod_data['latitude'].shape[0])
     #aspectRatio = 1.857142 # match UKV plots
 
-    # 1. colormesh() plot the EOFs for this height
-    # unrotated
-    plot_spatial_output_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
-                                 days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
-                                 perc_var_explained_unrot_keep, 'EOFs', model_type)
-    # rotated EOFs
-    plot_spatial_output_height_i(reordered_rot_loadings, ceil_metadata, lons, lats, rotEOFsavedir,
-                                 days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
-                                 perc_var_explained_ratio_rot, 'rotEOFs', model_type)
-
-    # 2. Explain variance vs EOF number
-    # unrot
-    line_plot_exp_var_vs_EOF(perc_var_explained_unrot_keep, height_i_label, expvarsavedir, 'EOFs')
-    # rotated
-    line_plot_exp_var_vs_EOF(perc_var_explained_ratio_rot, height_i_label, rotexpvarsavedir, 'rotEOFs')
-
-    # 3. PC timeseries
-    # unrotated
-    line_plot_PCs_vs_days_iterate(pcScores,  mod_data['time'], pcsavedir, 'PC')
-    # rot PC
-    line_plot_PCs_vs_days_iterate(reordered_rot_pcScores, mod_data['time'], rotPCscoresdir, 'rotPC')
+    # # 1. colormesh() plot the EOFs for this height
+    # # unrotated
+    # plot_spatial_output_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
+    #                              days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
+    #                              perc_var_explained_unrot_keep, 'EOFs', model_type)
+    # # rotated EOFs
+    # plot_spatial_output_height_i(reordered_rot_loadings, ceil_metadata, lons, lats, rotEOFsavedir,
+    #                              days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
+    #                              perc_var_explained_ratio_rot, 'rotEOFs', model_type)
+    #
+    # # 2. Explain variance vs EOF number
+    # # unrot
+    # line_plot_exp_var_vs_EOF(perc_var_explained_unrot_keep, height_i_label, expvarsavedir, 'EOFs')
+    # # rotated
+    # line_plot_exp_var_vs_EOF(perc_var_explained_ratio_rot, height_i_label, rotexpvarsavedir, 'rotEOFs')
+    #
+    # # 3. PC timeseries
+    # # unrotated
+    # line_plot_PCs_vs_days_iterate(pcScores,  mod_data['time'], pcsavedir, 'PC')
+    # # rot PC
+    # line_plot_PCs_vs_days_iterate(reordered_rot_pcScores, mod_data['time'], rotPCscoresdir, 'rotPC')
 
     # 4. Boxplot the statistics for each var and PC combination
     # Create boxplots for each variable subsampled using each PC (better than the bar chart plottng below)
@@ -1510,12 +1538,19 @@ if __name__ == '__main__':
     # 5. wind rose
     from windrose import WindroseAxes
     U = np.sqrt((mod_data['u_wind']**2.0) + (mod_data['v_wind']**2.0))
-    # arctan2 needs v then u as arguments! Tricksy numpies!
-    U_dir = 180 + ((180 / np.pi) * np.arctan2(mod_data['v_wind'], mod_data['u_wind']))
-    # u_wind_i = np.mean(mod_data['u_wind'], axis=(1,2))
-    # v_wind_i = np.mean(mod_data['v_wind'], axis=(1,2))
-    # U = np.sqrt((u_wind_i ** 2.0) + (v_wind_i ** 2.0))
-    # U_dir = 180 + ((180 / np.pi) * np.arctan2(v_wind_i, u_wind_i))
+
+    # wind direction is calculation is not simple...
+    # arctan2 needs arguments swapped to offset that its 0 deg is in the 'x' direction in arctan2 AND and +180 as we
+    #   want where the wind is coming FROM not going to (an alternative is to flip sign on the wind vectors):
+    #   https://docs.scipy.org/doc/numpy/reference/generated/numpy.arctan2.html
+    #   https://www.eol.ucar.edu/content/wind-direction-quick-reference
+    # wind direction sanity checked using many simple inputs and comparing to online websites and simple logic:
+    #   e.g. v = 5, u = 0 leads to wind direction = 180 deg; with more complex comparisons made against:
+    #   https://www.cactus2000.de/uk/unit/masswin.shtml
+    # simple: 180 + (np.arctan2(0, 5) * (180.0 / np.pi)) = 180 deg, where u=0 and v=5
+    U_dir = 180 + (np.arctan2(mod_data['u_wind'], mod_data['v_wind']) * (180.0 / np.pi)) # u, v
+
+    # need to do this plt.hist() first to bypass a known bug
     # https://github.com/python-windrose/windrose/issues/43
     plt.hist([0, 1])
     plt.close()
@@ -1528,7 +1563,7 @@ if __name__ == '__main__':
     ax.bar(U_dir.flatten(), U.flatten(), normed=True, opening=0.8, edgecolor='white', bins=bin_range)
     ax.set_title(pcsubsample, position=(0.5, 1.1))
     ax.set_legend()
-    ax.legend(title="wind speed (m/s)", loc=(1.1, 0), fontsize=12)
+    ax.legend(title='wind speed '+r'[$m\/s^{-1}$]', loc=(1.1, 0), fontsize=12)
     savename = windrosedir + 'windrose_' + height_i_label + '.png'
     plt.savefig(savename)
     plt.close(fig)
