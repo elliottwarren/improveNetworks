@@ -902,7 +902,7 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
 
         if model_type == 'UKV':
             ukvdatadir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter' \
-                         '/improveNetworks/data/UKV/'
+                         '/improveNetworks/data/UKV/ancillaries/'
             spacing = 0.0135 # spacing between lons and lats in rotated space
             UK_lat_constraint = iris.Constraint(grid_latitude=lambda cell: -1.2326999-spacing <= cell <= -0.7872) # +spacing
             UK_lon_constraint = iris.Constraint(grid_longitude=lambda cell: 361.21997 <= cell <= 361.73297+spacing)
@@ -976,7 +976,7 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
             # txt.set_path_effects([PathEffects.withStroke(linewidth=1, foreground='w')])
 
         # add % variance explained
-        eu.add_at(ax, '%2.1f' % var_exp_i + ' %', loc=1, frameon=True)
+        eu.add_at(ax, '%2.1f' % var_exp_i + ' %', loc=1, frameon=True, size=13)
 
         plt.suptitle(matrix_type + str(m_idx + 1) + '; height=' + height_i_label + '; ' + '%3.2f' % var_exp_i +'%; '+
                      str(len(days_iterate)) + ' cases')
