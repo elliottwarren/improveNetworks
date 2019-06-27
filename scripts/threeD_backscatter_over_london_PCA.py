@@ -1162,7 +1162,7 @@ def boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stat
 
         # create stars to signifiy how statistically significant each test was
         # ** = 99 %, * = 95 %, no star = not significant
-        mw_p = create_stats_significant_stars(boxplot_stats_bot, var, stats_height)
+        # mw_p = create_stats_significant_stars(boxplot_stats_bot, var, stats_height)
 
         fig = plt.figure(figsize=(5, 4))
         ax = plt.gca()
@@ -1214,6 +1214,55 @@ def boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stat
         savename = barsavedir + 'median_' + var + '_' + height_i_label + '_rotPCs.png'
         plt.savefig(savename)
         plt.close(fig)
+
+    return
+
+def create_windrose(mod_data, pcsubsample, windrosedir, height_i_label):
+
+    """
+    Create windrose for the wind data, during this period e.g. daytime
+    :param mod_data:
+    :param pcsubsample:
+    :param windrosedir:
+    :param height_i_label:
+    :return:
+
+    Windrose python package is a pain... it changes matplotlib basic settings. Only older versions of windrose work
+    on python 2.7 (1.6.2 if the package is to believed and the install didn't mess up). Getting wind direction is
+    also awkward given the u and v component direction - therefore needed to adapt np.arctan2() equation
+    """
+
+    from windrose import WindroseAxes
+    U = np.sqrt((mod_data['u_wind'] ** 2.0) + (mod_data['v_wind'] ** 2.0))
+
+    # wind direction is calculation is not simple...
+    # arctan2 needs arguments swapped to offset that its 0 deg is in the 'x' direction in arctan2 AND and +180 as we
+    #   want where the wind is coming FROM not going to (an alternative is to flip sign on the wind vectors):
+    #   https://docs.scipy.org/doc/numpy/reference/generated/numpy.arctan2.html
+    #   https://www.eol.ucar.edu/content/wind-direction-quick-reference
+    # wind direction sanity checked using many simple inputs and comparing to online websites and simple logic:
+    #   e.g. v = 5, u = 0 leads to wind direction = 180 deg; with more complex comparisons made against:
+    #   https://www.cactus2000.de/uk/unit/masswin.shtml
+    # simple: 180 + (np.arctan2(0, 5) * (180.0 / np.pi)) = 180 deg, where u=0 and v=5
+    U_dir = 180 + (np.arctan2(mod_data['u_wind'], mod_data['v_wind']) * (180.0 / np.pi))  # u, v
+
+    # need to do this plt.hist() first to bypass a known bug
+    # https://github.com/python-windrose/windrose/issues/43
+    plt.hist([0, 1])
+    plt.close()
+    fig = plt.figure(figsize=(10, 5))
+    rectangle = [0.1, 0.1, 0.8, 0.75]  # [left, bottom, width, height]
+    ax = WindroseAxes(fig, rectangle)
+    fig.add_axes(ax)
+    # bin_range = np.arange(0, 15, 2.5) # higher winds
+    bin_range = np.arange(0.0, 12.0, 2.0)
+    ax.bar(U_dir.flatten(), U.flatten(), normed=True, opening=0.8, edgecolor='white', bins=bin_range)
+    ax.set_title(pcsubsample, position=(0.5, 1.1))
+    ax.set_legend()
+    ax.legend(title='wind speed ' + r'[$m\/s^{-1}$]', loc=(1.1, 0), fontsize=12)
+    savename = windrosedir + 'windrose_' + height_i_label + '.png'
+    plt.savefig(savename)
+    plt.close(fig)
 
     return
 
@@ -1272,7 +1321,7 @@ if __name__ == '__main__':
     rotexpvarsavedir = savedir + 'rot_explained_variance/'
     boxsavedir = savedir + 'boxplots/'
     corrmatsavedir = savedir + 'corrMatrix/'
-    npysavedir = maindir + '/data/npy/'
+    npysavedir = maindir + '/data/npy/PCA/'
     windrosedir = savedir + 'windrose/'
 
     # # MO directories
@@ -1317,9 +1366,6 @@ if __name__ == '__main__':
     # prepare level_height array to store each level height, as they are made
     statistics = {'level_height': np.array([])}
 
-    # keep unrotated PCs for cluster anaylsis in another script
-    unrot_loadings_for_cluster = {}
-
     # ==============================================================================
     # Read and process data
     # ==============================================================================
@@ -1348,6 +1394,7 @@ if __name__ == '__main__':
     # 10=471.7m # np.arange(24) # 4 = 111.7m
     height_idx = 4
     #height_idx = int(sys.argv[1])
+    #for height_idx in np.arange(1,24):
     
     #for height_idx in [int(sys.argv[1])]: #np.arange(24):# [0]: #np.arange(24): # max 30 -> ~ 3.1km = too high! v. low aerosol; [8] = 325 m; [23] = 2075 m
     os.system('echo height idx '+str(height_idx)+' being processed')
@@ -1413,13 +1460,13 @@ if __name__ == '__main__':
     data_m_norm = data_m / np.std(data.T, axis=1)
     os.system('echo start calc cov matrix...')
     os.system('echo '+str(dt.datetime.now() - script_start))
-    
+
     # set up cov_data array (takes ~ 3 hours for ~27000^2 array)
-    cov_data = np.cov(data_m.T) # comaprison shows this, rot loadings and PCs matches SPSS ...   
+    cov_data = np.cov(data_m.T) # comaprison shows this, rot loadings and PCs matches SPSS ...
     os.system('echo finished calc cov matrix...')
     os.system('echo '+str(dt.datetime.now() - script_start))
-    
-    
+
+
     # pseduo inverse as the cov_matrix is too ill-conditioned for a normal inv.
     os.system('echo start invert cov matrix...')
     os.system('echo '+str(dt.datetime.now() - script_start))
@@ -1438,7 +1485,7 @@ if __name__ == '__main__':
     eig_vecs_keep, eig_vals, pcScores, loadings, perc_var_explained_unrot_keep = pca_analysis(data_m, cov_data, cov_inv)
 
     # store the kept loadings, for this height for later saving, and subsequent cluster analysis in another script
-    unrot_loadings_for_cluster[height_idx_str] = loadings
+    unrot_loadings_for_cluster = loadings
 
     # If there is more than 1 set of EOFs, PCs and loadings - VARIMAX rotate
     # Else, set the 'rotated' component equal to the unrotated component.
@@ -1466,27 +1513,22 @@ if __name__ == '__main__':
     for none_met_var in ['longitude', 'latitude', 'level_height', 'time', 'Q_H']:
         if none_met_var in met_vars: met_vars.remove(none_met_var)
 
-    # add height dictionary within statistics
-    statistics[height_idx_str] = {}
-
-    # keep a list of heights for plotting later
-    statistics['level_height'] = np.append(statistics['level_height'], height_i)
-    # statistics->height->EOF->met_var->stat
-    # plots to make...
-    #   bar chart... up vs lower, for each met var, for each height
+    # create statistics dictionary to retain statistics for later plotting and saving
+    statistics = {'level_height': height_i}
+    # statistics_height_i->EOF->met_var->stat
 
     # keep explained variances for unrotated and rotated EOFs
-    statistics[height_idx_str]['unrot_exp_variance'] = perc_var_explained_unrot_keep
-    statistics[height_idx_str]['rot_exp_variance'] = perc_var_explained_ratio_rot
+    statistics['unrot_exp_variance'] = perc_var_explained_unrot_keep
+    statistics['rot_exp_variance'] = perc_var_explained_ratio_rot
 
     # Pearson (product moment) correlation between PCs and between EOFs
     if loadings.shape[-1] > 1:
-        statistics[height_idx_str]['pcCorrMatrix'] = np.corrcoef(reordered_rot_pcScores.T)
-        statistics[height_idx_str]['loadingsCorrMatrix'] = np.corrcoef(reordered_rot_loadings.T)
+        statistics['pcCorrMatrix'] = np.corrcoef(reordered_rot_pcScores.T)
+        statistics['loadingsCorrMatrix'] = np.corrcoef(reordered_rot_loadings.T)
 
         # plot and save correlation matrix
-        plot_corr_matrix_table(statistics[height_idx_str]['pcCorrMatrix'], 'pcCorrMatrix', data_var, height_i_label)
-        plot_corr_matrix_table(statistics[height_idx_str]['loadingsCorrMatrix'], 'loadingsCorrMatrix', data_var, height_i_label)
+        plot_corr_matrix_table(statistics['pcCorrMatrix'], 'pcCorrMatrix', data_var, height_i_label)
+        plot_corr_matrix_table(statistics['loadingsCorrMatrix'], 'loadingsCorrMatrix', data_var, height_i_label)
 
     # Calculate statistics for each var, for each PC.
     # Includes creating a dictionary of statistics for box plotting, without needing to export the whole
@@ -1494,8 +1536,9 @@ if __name__ == '__main__':
     statistics_height, boxplot_stats_top, boxplot_stats_bot = \
         pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars, ceil_metadata, height_i_label,
                              topmeddir, botmeddir)
+
     # copy statistics for this height into the full statistics dicionary for all heights
-    statistics[height_idx_str] = deepcopy(statistics_height)
+    statistics['main_stats'] = deepcopy(statistics_height)
 
     # ---------------------------------------------------------
     # Plotting
@@ -1528,46 +1571,14 @@ if __name__ == '__main__':
     # line_plot_PCs_vs_days_iterate(pcScores,  mod_data['time'], pcsavedir, 'PC')
     # # rot PC
     # line_plot_PCs_vs_days_iterate(reordered_rot_pcScores, mod_data['time'], rotPCscoresdir, 'rotPC')
-
-    # 4. Boxplot the statistics for each var and PC combination
-    # Create boxplots for each variable subsampled using each PC (better than the bar chart plottng below)
-    stats_height = statistics[height_idx_str]
-    boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, stats_height, boxsavedir,
-                  height_i_label)
-
-    # 5. wind rose
-    from windrose import WindroseAxes
-    U = np.sqrt((mod_data['u_wind']**2.0) + (mod_data['v_wind']**2.0))
-
-    # wind direction is calculation is not simple...
-    # arctan2 needs arguments swapped to offset that its 0 deg is in the 'x' direction in arctan2 AND and +180 as we
-    #   want where the wind is coming FROM not going to (an alternative is to flip sign on the wind vectors):
-    #   https://docs.scipy.org/doc/numpy/reference/generated/numpy.arctan2.html
-    #   https://www.eol.ucar.edu/content/wind-direction-quick-reference
-    # wind direction sanity checked using many simple inputs and comparing to online websites and simple logic:
-    #   e.g. v = 5, u = 0 leads to wind direction = 180 deg; with more complex comparisons made against:
-    #   https://www.cactus2000.de/uk/unit/masswin.shtml
-    # simple: 180 + (np.arctan2(0, 5) * (180.0 / np.pi)) = 180 deg, where u=0 and v=5
-    U_dir = 180 + (np.arctan2(mod_data['u_wind'], mod_data['v_wind']) * (180.0 / np.pi)) # u, v
-
-    # need to do this plt.hist() first to bypass a known bug
-    # https://github.com/python-windrose/windrose/issues/43
-    plt.hist([0, 1])
-    plt.close()
-    fig = plt.figure(figsize=(10, 5))
-    rectangle = [0.1, 0.1, 0.8, 0.75]  # [left, bottom, width, height]
-    ax = WindroseAxes(fig, rectangle)
-    fig.add_axes(ax)
-    # bin_range = np.arange(0, 15, 2.5) # higher winds
-    bin_range = np.arange(0.0, 12.0, 2.0)
-    ax.bar(U_dir.flatten(), U.flatten(), normed=True, opening=0.8, edgecolor='white', bins=bin_range)
-    ax.set_title(pcsubsample, position=(0.5, 1.1))
-    ax.set_legend()
-    ax.legend(title='wind speed '+r'[$m\/s^{-1}$]', loc=(1.1, 0), fontsize=12)
-    savename = windrosedir + 'windrose_' + height_i_label + '.png'
-    plt.savefig(savename)
-    plt.close(fig)
-
+    #
+    # # 4. Boxplot the statistics for each var and PC combination
+    # # Create boxplots for each variable subsampled using each PC (better than the bar chart plottng below)
+    # boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, statistics['main_stats'], boxsavedir,
+    #               height_i_label)
+    #
+    # # 5. wind rose
+    # create_windrose(mod_data, pcsubsample, windrosedir, height_i_label)
 
     # ---------------------------------------------------------
     # Save stats
@@ -1575,7 +1586,7 @@ if __name__ == '__main__':
 
     os.system('echo saving statistics to numpy array')
 
-    # save statistics 
+    # save statistics
     npysavedir_statistics_fullpath = npysavedir+model_type+'_'+data_var+'_'+pcsubsample+'_heightidx'+height_idx_str+'_statistics.npy'
     np.save(npysavedir_statistics_fullpath, statistics)
 
@@ -1584,6 +1595,8 @@ if __name__ == '__main__':
     save_dict = {'loadings': unrot_loadings_for_cluster,
                  'longitude': lons, 'latitude': lats}
     np.save(npysavedir_loadings_fullpath, save_dict)
+
+    os.system('echo saved stats and loadings to:' +npysavedir)
 
     os.system('echo END PROGRAM')
     print 'END PROGRAM'
