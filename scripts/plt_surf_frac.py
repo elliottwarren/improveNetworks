@@ -23,6 +23,31 @@ import os
 
 from threeD_backscatter_over_london import rotate_lon_lat_2D
 
+def read_murk_aer(datadir, model_type):
+
+    # load data
+    if model_type == 'UKV':
+        # checked it matches other UKV output: slight differences in domain constraint number due to different
+        #   number precision error in the saved files...
+        murk_con = iris.Constraint(coord_values=
+                                   {'grid_latitude': lambda cell: -1.2327999 <= cell <= -0.7738,
+                                    'grid_longitude': lambda cell: 361.21997 <= cell <= 361.733})
+        murk_aer = iris.load_cube(datadir + 'UKV_murk_surface.nc', murk_con)
+        murk_aer = murk_aer[6, :, :]  # get July
+
+    elif model_type == 'LM':
+        spacing = 0.003  # checked
+        # checked that it perfectly matches LM data extract (setup is different to UKV orog_con due to
+        #    number precision issues.
+        con = iris.Constraint(coord_values={
+            'grid_latitude': lambda cell: -1.214 - spacing < cell < -0.776,
+            'grid_longitude': lambda cell: 361.21 < cell < 361.732 + spacing})
+
+        murk_aer_all = iris.load_cube(datadir + 'qrclim.murk_L70')
+        murk_aer = murk_aer_all.extract(con)
+
+    return murk_aer
+
 if __name__ == '__main__':
 
     # what to plot? Surface types of orography? (Come in different files)
@@ -122,25 +147,7 @@ if __name__ == '__main__':
         temp_cmap = plt.get_cmap('jet')
 
         # load data
-        if model_type == 'UKV':
-            # checked it matches other UKV output: slight differences in domain constraint number due to different
-            #   number precision error in the saved files...
-            murk_con = iris.Constraint(coord_values=
-                                       {'grid_latitude': lambda cell: -1.2327999 <= cell <= -0.7738,
-                                        'grid_longitude': lambda cell: 361.21997 <= cell <= 361.733})
-            murk_aer = iris.load_cube(datadir + 'UKV_murk_surface.nc', murk_con)
-            murk_aer = murk_aer[6, :, :] # get July
-        elif model_type == 'LM':
-
-            spacing = 0.003  # checked
-            # checked that it perfectly matches LM data extract (setup is different to UKV orog_con due to
-            #    number precision issues.
-            con = iris.Constraint(coord_values={
-                                      'grid_latitude': lambda cell: -1.214 - spacing < cell < -0.776,
-                                      'grid_longitude': lambda cell: 361.21 < cell < 361.732 + spacing})
-
-            murk_aer_all = iris.load_cube(datadir + 'qrclim.murk_L70')
-            murk_aer = murk_aer_all.extract(con)
+        murk_aer = read_murk_aer(model_type)
 
         rot_lats = murk_aer.coord('grid_latitude').points
         rot_lons = murk_aer.coord('grid_longitude').points# - 360.0 - removing 360 has no real effect on rotation
@@ -150,7 +157,7 @@ if __name__ == '__main__':
 
         #height_idx = 4# 10
         #height = murk_aer.coord('level_height').points[height_idx]
-        month_idx = 0
+        month_idx = 7
         # murk_data = murk_aer.data[month_idx, height_idx, :, :]
         murk_data = murk_aer.data
         # plt.subplots(1, 1, figsize=(4.5 * aspectRatio, 4.5))
