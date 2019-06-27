@@ -39,15 +39,160 @@ import matplotlib as mpl
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.pyplot as plt
 from scipy import stats
-
-#from ellUtils import ellUtils as eu
-#import ceilUtils.ceilUtils as ceil
-
-import ellUtils as eu
-import ceilUtils as ceil
-
 import os
 from sklearn.cluster import AgglomerativeClustering
+
+from ellUtils import ellUtils as eu
+from ceilUtils import ceilUtils as ceil
+
+# import ellUtils as eu
+# import ceilUtils as ceil
+
+from plt_surf_frac import read_murk_aer
+
+def load_loadings_lon_lats(npydatadir, data_var, pcsubsample, model_type):
+
+    """
+    Load in the PCA loadings, longitude and latitudes, given the model_type
+    :param model_type:
+    :return: data, lons, lats
+    """
+
+    # if model_type == 'UKV':
+    #     filename = npysavedir + data_var + '_' + pcsubsample + '_unrotLoadings.npy'
+    #     raw = np.load(filename).flat[0]
+    #     data = np.hstack(raw['loadings'].values())  # .shape(Xi, all_loadings)
+    #     # just get a few heights
+    #     # data = np.hstack([raw['loadings'][str(i)] for i in np.arange(7,20)])
+    #     lons = raw['longitude']
+    #     lats = raw['latitude']
+    #
+    # elif model_type == 'LM':
+    raw = []
+    for i in np.arange(24):
+        filename = npydatadir + model_type + '_' + data_var + '_' + pcsubsample + '_heightidx' + '{}'.format(i) + \
+                   '_unrotLoadings.npy'
+        raw += [np.load(filename).flat[0]['loadings']]
+
+    # data = np.hstack([np.hstack(height_i['loadings'].values()) for height_i in raw]) # old LM
+    data = np.hstack(raw)
+    # use last filename in loop as long and lats are the same through all the numpy files.
+    lons = np.load(filename).flat[0]['longitude']
+    lats = np.load(filename).flat[0]['latitude']
+
+    return data, lons, lats
+
+def read_orography(model_type):
+    """
+    Load in orography from NWP models
+    :param model_type:
+    :return: orog (cube)
+
+    Spacing and ranges need slightly changing as orography lat and lons are not precisely equal to those saved
+    from the UKV elsewhere, because of numerical precision. Each defined orog lat and lon range, with the
+    subsequent output was checked against the UKV to ensure they match.
+
+    """
+
+    if model_type == 'UKV':
+        ukvdatadir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter' \
+                     '/improveNetworks/data/UKV/ancillaries/'
+        UK_lat_constraint = iris.Constraint(
+            grid_latitude=lambda cell: -1.2327 <= cell <= -0.7872)  # +spacing
+        UK_lon_constraint = iris.Constraint(grid_longitude=lambda cell: 361.21997 <= cell <= 361.74647)
+        orog = iris.load_cube(ukvdatadir + 'UKV_orography.nc', constraint=UK_lat_constraint & UK_lon_constraint)
+
+    elif model_type == 'LM':
+        orogdatadir = ''
+        orog_con = iris.Constraint(name='surface_altitude',
+                                   coord_values={
+                                       'grid_latitude': lambda cell: -1.214 - spacing < cell < -0.776,
+                                       'grid_longitude': lambda cell: 1.21 < cell < 1.732 + spacing})
+        orog = iris.load_cube(orogdatadir + '20181022T2100Z_London_charts', orog_con)
+
+    return orog
+
+def load_loading_explained_variance_and_height(npydatadir, data_var, pcsubsample, model_type):
+    unrot_exp_var = []
+    height = []
+    for i in np.arange(24):
+        filename = npydatadir + model_type + '_' + data_var + '_' + pcsubsample + '_heightidx' + '{}'.format(i) + \
+                   '_statistics.npy'
+        unrot_exp_var_i = np.sum(np.load(filename).flat[0]['unrot_exp_variance'])
+        height_i = np.around(np.load(filename).flat[0]['level_height'], decimals=1)
+
+        unrot_exp_var += [unrot_exp_var_i]
+        height += [height_i]
+
+    return np.array(unrot_exp_var), np.array(height)
+
+
+def plot_cluster_analysis_groups(groups_reshape, lons, lats, orog, ceil_metadata, unrot_exp_var, n_clusters,
+                                 group_numbers, data_var, pcsubsample, linkage_type, clustersavedir):
+
+    """
+    Plot the cluster analysis data with an overlaying orography contour map. Ratio and size fixed to match EOF maps.
+    Return cmap so it can be used to colour the histogram later...
+    :param groups_reshape:
+    :param lons:
+    :param lats:
+    :param orog:
+    :param ceil_metadata:
+    :param unrot_exp_var:
+    :param n_clusters:
+    :param group_numbers:
+    :param data_var:
+    :param pcsubsample:
+    :param linkage_type:
+    :param clustersavedir:
+    :return: cmap
+    """
+
+    aspectRatio = float(lons.shape[1]) / float(lons.shape[0])
+
+    fig, ax = plt.subplots(1, 1, figsize=(6 * aspectRatio, 5))
+
+    # get cmap and plot clusters and
+    cmap = plt.get_cmap('jet', n_clusters)
+    norm = mpl.colors.BoundaryNorm(np.arange(1, n_clusters + 2), cmap.N)
+    pcmesh = ax.pcolormesh(lons, lats, groups_reshape, cmap=cmap, norm=norm)
+    plt.tick_params(direction='out', top=False, right=False, labelsize=13)
+    plt.setp(ax.get_xticklabels(), rotation=35, fontsize=13)
+
+    # colorbar
+    divider = make_axes_locatable(ax)
+    color_axis = divider.append_axes("right", size="5%", pad=-0.1)
+    cbar = plt.colorbar(pcmesh, ticks=group_numbers + 0.5, cax=color_axis)
+    cbar.ax.set_yticklabels([str(i) for i in group_numbers])
+
+    # plot orography
+    cont = ax.contour(lons, lats, orog.data, cmap='OrRd')  # cmap='OrRd' # colors='black'
+    ax.clabel(cont, fmt='%1d')  # , color='black'
+    # dash the lowest orographic contour
+    zc = cont.collections[0]
+    plt.setp(zc, linestyle='--')
+
+    # plot each ceilometer location
+    for site, loc in ceil_metadata.iteritems():
+        plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
+        plt.annotate(site, (loc[0], loc[1]))
+
+    # add % variance explained
+    eu.add_at(ax, '%2.1f' % np.mean(unrot_exp_var) + ' %', loc=1, frameon=True, size=13)
+
+    # prettify
+    ax.set_xlabel('Longitude [degrees]', fontsize=13)
+    ax.set_ylabel('Latitude [degrees]', fontsize=13)
+    ax.set_aspect(aspectRatio, adjustable=None)
+    plt.suptitle(data_var + ': ' + pcsubsample + '; ' + linkage_type)
+    # plt.tight_layout()
+
+    # save
+    savename = data_var + '_' + pcsubsample + '_CA_' + str(n_clusters) + 'clusters.png'
+    plt.savefig(clustersavedir + savename)
+    plt.close(fig)
+
+    return cmap
 
 if __name__ == '__main__':
 
@@ -84,7 +229,8 @@ if __name__ == '__main__':
     # Laptop directories
     maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
     datadir = maindir + 'data/'
-    npydatadir = datadir + 'npy/'
+    metadatadir = datadir
+    npydatadir = datadir + 'npy/PCA/'
     ukvdatadir = maindir + 'data/UKV/'
     ceilDatadir = datadir + 'L1/'
     modDatadir = datadir + model_type + '/'
@@ -92,7 +238,7 @@ if __name__ == '__main__':
     savedir = pcsubsampledir + data_var+'/'
     clustersavedir = savedir + 'cluster_analysis/'
     histsavedir = clustersavedir + 'histograms/'
-    npysavedir = datadir + 'npy/PCA/'
+    #npysavedir = datadir + 'npy/PCA/'
 
     # # MO directories
     # maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
@@ -124,58 +270,19 @@ if __name__ == '__main__':
 
     # 2. Loadings
     # Read in the unrotated loadings and extract out the loadings (data), longitude and latitude (WGS84 space)
-    if model_type == 'UKV':
-        filename = npysavedir + data_var +'_'+pcsubsample+'_unrotLoadings.npy'
-        raw = np.load(filename).flat[0]
-        data = np.hstack(raw['loadings'].values())  # .shape(Xi, all_loadings)
-        # just get a few heights
-        #data = np.hstack([raw['loadings'][str(i)] for i in np.arange(7,20)])
-        lons = raw['longitude']
-        lats = raw['latitude']
-
-    elif model_type == 'LM':
-        raw=[]
-        for i in np.arange(24):
-            filename = npydatadir + model_type + '_' + data_var + '_' + pcsubsample + '_heightidx' + '{}'.format(i) + \
-            '_unrotLoadings.npy'
-            raw += [np.load(filename).flat[0]]
-        # double hstack required
-        data = np.hstack([np.hstack(height_i['loadings'].values()) for height_i in raw])
-        lons = raw[0]['longitude']
-        lats = raw[0]['latitude']
-
-
+    data, lons, lats = load_loadings_lon_lats(npydatadir, data_var, pcsubsample, model_type)
 
     # 3. Orography
     # manually checked and lined up against UKV data used in PCA.
     # slight mismatch due to different number precision used in both (hence why spacing is not used to reduce lower
     #   longitude limit below.
-    if model_type == 'UKV':
-        spacing = 0.0135 # spacing between lons and lats in rotated space
-        UK_lat_constraint = iris.Constraint(grid_latitude=lambda cell: -1.2326999-spacing <= cell <= -0.7737+spacing)
-        UK_lon_constraint = iris.Constraint(grid_longitude=lambda cell: 361.21997 <= cell <= 361.73297+spacing)
-        orog = iris.load_cube(ukvdatadir + 'UKV_orography.nc', constraint=UK_lat_constraint & UK_lon_constraint)
+    orog = read_orography(model_type)
 
-        # 4. murk ancillaries (shape = month, height, lat, lon)
-        murk_aer = np.load(npydatadir + model_type+'_murk_ancillaries.npy').flatten()[0]
+    # 4. MURK aerosol
+    # murk_aer = read_murk_aer(datadir, model_type)
 
-    elif model_type == 'LM':
-        # orography
-        spacing = 0.003 # checked
-        # checked that it perfectly matches LM data extract (setup is different to UKV orog_con due to
-        #    number precision issues.
-        orog_con = iris.Constraint(name='surface_altitude',
-                                   coord_values={
-                                       'grid_latitude': lambda cell: -1.214 - spacing < cell < -0.776,
-                                       'grid_longitude': lambda cell: 1.21 < cell < 1.732 + spacing})
-        orog = iris.load_cube(orogdatadir + '20181022T2100Z_London_charts', orog_con)
-
-        # MURK - lon and lats here are in unrotated space but do match the same domain as orog (manualy checked).
-        con = iris.Constraint(coord_values={
-            'grid_latitude': lambda cell: -1.214 - spacing < cell < -0.776,
-            'grid_longitude': lambda cell: 361.21 < cell < 361.732 + spacing})
-        murk_aer_all = iris.load_cube(murkdatadir + 'qrclim.murk_L70')
-        murk_aer = murk_aer_all.extract(con)
+    # EOF statistics
+    unrot_exp_var, height = load_loading_explained_variance_and_height(npydatadir, data_var, pcsubsample, model_type)
 
     # ==============================================================================
     # Process data
@@ -189,18 +296,38 @@ if __name__ == '__main__':
     cluster_groups = cluster.labels_ +1
     group_numbers = np.unique(cluster_groups)
 
-    for ancil_type in ['murk_aer', 'orog']:
+    # adjust numbering so largest group is 1, smallest is n
+
+    # current idx for each group
+    group_curr_idx = [np.where(cluster_groups == i)[0] for i in group_numbers]
+    # get length of each group
+    group_sizes = np.array([len(i) for i in group_curr_idx])
+    # find what numbers they should be (1 = smallest, n_clusters = largest)
+    a = np.argsort(group_sizes) # indicies to sort array
+    aa = np.argsort(a) # actual rank of array
+    b = n_clusters-aa # what the numbers should be for each group, if numbered by size, in ascending order (1=biggest)
+    # change numbers
+    # cluster_groups_new = deepcopy(cluster_groups)
+    for i in np.arange(n_clusters):
+        group_i_idx = group_curr_idx[i] # idx positions for this group
+        cluster_groups[group_i_idx] = b[i] # change number to their new ordered number (e.g. largest = 1
+
+    #cluster_groups.argsort()
+
+    # # check
+    for i in np.arange(1,n_clusters+1):
+       print str(i) + ': ' + str(len(np.where(cluster_groups == i)[0]))
+
+    for ancil_type in ['orog']: # ['murk_aer', 'orog']
 
         # # split orography into groups based on clusters
         # # Flatten in fortran style to match the clustering code above(column wise instead of default row-wise('C'))
         # # Kruskal-Wallis test (non-parametric equivalent of ANOVA)
         # kw_s, kw_p = stats.kruskal(*orog_groups)
-        if ancil_type == 'murk_aer':
-            height = 0
-            month_idx = 0
-            ancil_data = murk_aer.data[month_idx, height, :, :]
-        elif ancil_type == 'orog':
+        if ancil_type == 'orog':
             ancil_data = orog.data
+        # elif ancil_type == 'murk_aer':
+        #     ancil_data = murk_aer
 
         # split the ancillary into groups based on the cluster groups
         ancil_groups = [ancil_data.flatten('F')[cluster_groups == i] for i in group_numbers]
@@ -208,18 +335,22 @@ if __name__ == '__main__':
         # Kruskal-Wallis test (non-parametric equivalent of ANOVA)
         kw_s, kw_p = stats.kruskal(*ancil_groups)
 
+        # ==============================================================================
+        # Plotting
+        # ==============================================================================
+
         # plot
         lat_shape = int(lats.shape[0])
         lon_shape = int(lons.shape[1])
         X_shape = int(lat_shape * lon_shape)
-        aspectRatio = float(lons.shape[0]) / float(lats.shape[1])
+        aspectRatio = float(lons.shape[1]) / float(lons.shape[0])
 
         groups_reshape = np.transpose(
             np.vstack([cluster_groups[n:n + lat_shape] for n in np.arange(0, X_shape, lat_shape)]))  # 1225
 
-        # ==============================================================================
-        # Plotting
-        # ==============================================================================
+        #2. Plot cluster analysis groups
+        cmap = plot_cluster_analysis_groups(groups_reshape, lons, lats, orog, ceil_metadata, unrot_exp_var, n_clusters,
+                                     group_numbers, data_var, pcsubsample, linkage_type, clustersavedir)
 
         # Looks complicated... tries to overlap histograms
         # n, x, rectangles = plt.hist(orog_groups, bins=20, histtype='stepfilled',alpha=0.8)
@@ -227,54 +358,57 @@ if __name__ == '__main__':
         # _, _, rectangles2 = plt.hist(orog_groups, bins=20, histtype='step', color=colors, alpha=1)
         # [i[0].set_linewidth(2) for i in rectangles2]
 
-        vmin=np.percentile(np.hstack(ancil_groups), 5)
-        vmax=np.percentile(np.hstack(ancil_groups), 95)
-        step=(vmax-vmin)/20.0
+        # 1. Plot ancillary split histograms
 
-        fig, axs = plt.subplots(n_clusters, 1, sharex=True, sharey=True)
+        # vmin=np.percentile(np.hstack(ancil_groups), 5)
+        # vmax=np.percentile(np.hstack(ancil_groups), 95)
+        # step=(vmax-vmin)/20.0
+        vmin = 0.0
+        vmax = 160.0
+        step = 10.0
+
+        fig, axs = plt.subplots(n_clusters, 1, sharex=True, figsize=(5,5))
         # hist plot each group of orography onto each axis
         for i, ax_i in enumerate(axs):
 
-            # ax_i.hist(ancil_groups[i], bins=np.arange(0, 220, 10),
-            #              histtype='stepfilled',alpha=0.8)
-            ax_i.hist(ancil_groups[i], bins=np.arange(vmin, vmax, step),
-                         histtype='stepfilled',alpha=0.8)
-            eu.add_at(ax_i, str(i+1), loc=5) # +1 to have groups start from 1 not 0.
+            # extract the right colour from cmap, for plotting. cmap() arg needs to be a fraction of 1.
+            #   e.g. 5th colour out of 7 = 5.0/7.0 ~= 0.714... Also use float(i) to prevent rounding to 0 or 1.
+            colour_i = cmap(float(i)/len(axs))
 
-        plt.suptitle('K-W test p=%3.2f' % kw_p)
+            freq, x, patches = ax_i.hist(ancil_groups[i], bins=np.arange(vmin, vmax, step),
+                         histtype='stepfilled',alpha=0.8, color=colour_i)
+            eu.add_at(ax_i, str(i+1), loc=5, size=13) # +1 to have groups start from 1 not 0.
+
+            ax_i.tick_params(direction='in', top=False, right=False, labelsize=13, pad=0)
+            plt.setp(ax_i.get_xticklabels(), fontsize=13)
+            plt.setp(ax_i.get_yticklabels(), fontsize=13)
+
+            # find good label ticks, to prevent label overlap. Cycle through options and pick best one.
+            steps = [5, 10, 20, 25, 50, 100, 200, 250, 500, 1000]
+            for step_i in steps:
+                pos_range = np.arange(0, np.max(freq)+step_i, step_i)
+                if len(pos_range) <= 3:
+                    break
+            ax_i.yaxis.set_ticks(pos_range)
+
+        # ax_i.tick_params(axis='y', which='major', pad=10)
+        #ax_i.xaxis.set_minor_formatter(mpl.ticker.NullFormatter())
+
+        #plt.suptitle('K-W test p=%3.2f' % kw_p)
+
+        ax_0 = eu.fig_majorAxis(fig)
+        ax_0.set_ylabel('Frequency')
+        plt.xlabel('Height [m]')
+        plt.tight_layout(h_pad=0.0)
 
         savename = data_var+'_'+pcsubsample+'_'+ancil_type+'_'+str(n_clusters)+'clusters.png'
         plt.savefig(histsavedir + savename)
         plt.close()
 
-        #2. Plot cluster analysis groups
-        #fig, ax = plt.subplots(1, 1, figsize=(4.0, 4.0))  # * aspectRatio
-        fig = plt.figure(figsize=(6.0, 6.0*0.7*aspectRatio))  # * aspectRatio
-        ax = fig.add_subplot(111, aspect=aspectRatio)
-
-        #cmap, norm = eu.discrete_colour_map(0, n_clusters, 1)
-        cmap = plt.get_cmap('jet', n_clusters)
-        norm = mpl.colors.BoundaryNorm(np.arange(1,n_clusters+2), cmap.N)
-
-        pcmesh = ax.pcolormesh(lons, lats, groups_reshape, cmap=cmap, norm=norm)
-        ax.set_xlabel(r'$Longitude$')
-        ax.set_ylabel(r'$Latitude$')
-        the_divider = make_axes_locatable(ax)
-        color_axis = the_divider.append_axes("right", size="5%", pad=0.1)
-        cbar=plt.colorbar(pcmesh, ticks=group_numbers, cax=color_axis)
-        #cbar=plt.colorbar(pcmesh, cax=color_axis)
-        plt.tight_layout()
-
-        # plot each ceilometer location
-        for site, loc in ceil_metadata.iteritems():
-            plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
-            plt.annotate(site, (loc[0], loc[1]))
-
-        plt.suptitle(data_var+': '+pcsubsample+'; '+linkage_type)
-        savename = data_var+'_'+pcsubsample+'_CA_'+str(n_clusters)+'clusters.png'
-        plt.savefig(clustersavedir + savename)
-        plt.close(fig)
-
-
-
+        # # 4. thin vertical plot of explained variance per height
+        # fig, ax = plt.subplots(1, 1, figsize=(2, 6.0 * 0.7 * aspectRatio))
+        # plt.plot(unrot_exp_var, height/1000.0)
+        # plt.xlabel('explained\nvariance')
+        # plt.ylabel('height', rotation=90)
+        # plt.tight_layout()
 
