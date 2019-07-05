@@ -42,13 +42,71 @@ from scipy import stats
 import os
 from sklearn.cluster import AgglomerativeClustering
 
-from ellUtils import ellUtils as eu
-from ceilUtils import ceilUtils as ceil
+# from ellUtils import ellUtils as eu
+# from ceilUtils import ceilUtils as ceil
 
-# import ellUtils as eu
-# import ceilUtils as ceil
+import ellUtils as eu
+import ceilUtils as ceil
 
-from plt_surf_frac import read_murk_aer
+
+def read_murk_aer(datadir, model_type):
+
+    # load data
+    if model_type == 'UKV':
+        # checked it matches other UKV output: slight differences in domain constraint number due to different
+        #   number precision error in the saved files...
+        murk_con = iris.Constraint(coord_values=
+                                   {'grid_latitude': lambda cell: -1.2327999 <= cell <= -0.7738,
+                                    'grid_longitude': lambda cell: 361.21997 <= cell <= 361.733})
+        murk_aer = iris.load_cube(datadir + 'UKV_murk_surface.nc', murk_con)
+        murk_aer = murk_aer[6, :, :]  # get July
+
+    elif model_type == 'LM':
+        spacing = 0.003  # checked
+        # checked that it perfectly matches LM data extract (setup is different to UKV orog_con due to
+        #    number precision issues.
+        con = iris.Constraint(coord_values={
+            'grid_latitude': lambda cell: -1.214 - spacing < cell < -0.776,
+            'grid_longitude': lambda cell: 361.21 < cell < 361.732 + spacing})
+
+        murk_aer_all = iris.load_cube(datadir + 'qrclim.murk_L70')
+        murk_aer = murk_aer_all.extract(con)
+
+    return murk_aer
+
+
+def read_orography(model_type):
+
+    """
+    Load in orography from NWP models
+    :param model_type:
+    :return: orog (cube)
+
+    Spacing and ranges need slightly changing as orography lat and lons are not precisely equal to those saved
+    from the UKV elsewhere, because of numerical precision. Each defined orog lat and lon range, with the
+    subsequent output was checked against the UKV to ensure they match.
+
+    """
+
+    if model_type == 'UKV':
+        ukvdatadir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter' \
+                     '/improveNetworks/data/UKV/ancillaries/'
+        spacing = 0.0135 # spacing between lons and lats in rotated space
+        UK_lat_constraint = iris.Constraint(grid_latitude=lambda cell: -1.2326999-spacing <= cell <= -0.7872) # +spacing
+        UK_lon_constraint = iris.Constraint(grid_longitude=lambda cell: 361.21997 <= cell <= 361.73297+spacing)
+        orog = iris.load_cube(ukvdatadir + 'UKV_orography.nc', constraint=UK_lat_constraint & UK_lon_constraint)
+
+    elif model_type == 'LM':
+        orogdatadir = '/data/jcmm1/ewarren/ancillaries/'
+        spacing = 0.003  # checked
+        orog_con = iris.Constraint(name='surface_altitude',
+                                   coord_values={
+                                       'grid_latitude': lambda cell: -1.214 - spacing < cell < -0.776,
+                                       'grid_longitude': lambda cell: 1.21 < cell < 1.732 + spacing})
+        orog = iris.load_cube(orogdatadir + '20181022T2100Z_London_charts', orog_con)
+
+    return orog
+
 
 def load_loadings_lon_lats(npydatadir, data_var, pcsubsample, model_type):
 
@@ -67,12 +125,18 @@ def load_loadings_lon_lats(npydatadir, data_var, pcsubsample, model_type):
     #     lons = raw['longitude']
     #     lats = raw['latitude']
     #
-    # elif model_type == 'LM':
     raw = []
     for i in np.arange(24):
         filename = npydatadir + model_type + '_' + data_var + '_' + pcsubsample + '_heightidx' + '{}'.format(i) + \
                    '_unrotLoadings.npy'
-        raw += [np.load(filename).flat[0]['loadings']]
+        if model_type == 'UKV':
+            raw += [np.load(filename).flat[0]['loadings']]
+        # changed numpy saving for 117.7 m and accidentally broke consistency. Therefore load in i=4 differently...
+        elif model_type == 'LM':
+            if i != 4:
+                raw += [np.load(filename).flat[0]['loadings'][str(i)]]
+            else:
+                raw += [np.load(filename).flat[0]['loadings']]
 
     # data = np.hstack([np.hstack(height_i['loadings'].values()) for height_i in raw]) # old LM
     data = np.hstack(raw)
@@ -82,35 +146,6 @@ def load_loadings_lon_lats(npydatadir, data_var, pcsubsample, model_type):
 
     return data, lons, lats
 
-def read_orography(model_type):
-    """
-    Load in orography from NWP models
-    :param model_type:
-    :return: orog (cube)
-
-    Spacing and ranges need slightly changing as orography lat and lons are not precisely equal to those saved
-    from the UKV elsewhere, because of numerical precision. Each defined orog lat and lon range, with the
-    subsequent output was checked against the UKV to ensure they match.
-
-    """
-
-    if model_type == 'UKV':
-        ukvdatadir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter' \
-                     '/improveNetworks/data/UKV/ancillaries/'
-        UK_lat_constraint = iris.Constraint(
-            grid_latitude=lambda cell: -1.2327 <= cell <= -0.7872)  # +spacing
-        UK_lon_constraint = iris.Constraint(grid_longitude=lambda cell: 361.21997 <= cell <= 361.74647)
-        orog = iris.load_cube(ukvdatadir + 'UKV_orography.nc', constraint=UK_lat_constraint & UK_lon_constraint)
-
-    elif model_type == 'LM':
-        orogdatadir = ''
-        orog_con = iris.Constraint(name='surface_altitude',
-                                   coord_values={
-                                       'grid_latitude': lambda cell: -1.214 - spacing < cell < -0.776,
-                                       'grid_longitude': lambda cell: 1.21 < cell < 1.732 + spacing})
-        orog = iris.load_cube(orogdatadir + '20181022T2100Z_London_charts', orog_con)
-
-    return orog
 
 def load_loading_explained_variance_and_height(npydatadir, data_var, pcsubsample, model_type):
     unrot_exp_var = []
@@ -223,37 +258,37 @@ if __name__ == '__main__':
     # ------------------
 
     # which modelled data to read in
-    model_type = 'UKV'
-    #model_type = 'LM'
+    #model_type = 'UKV'
+    model_type = 'LM'
 
-    # Laptop directories
-    maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-    datadir = maindir + 'data/'
-    metadatadir = datadir
-    npydatadir = datadir + 'npy/PCA/'
-    ukvdatadir = maindir + 'data/UKV/'
-    ceilDatadir = datadir + 'L1/'
-    modDatadir = datadir + model_type + '/'
-    pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
-    savedir = pcsubsampledir + data_var+'/'
-    clustersavedir = savedir + 'cluster_analysis/'
-    histsavedir = clustersavedir + 'histograms/'
-    #npysavedir = datadir + 'npy/PCA/'
-
-    # # MO directories
-    # maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
-    # datadir = '/data/jcmm1/ewarren/'
-    # orogdatadir = '/data/jcmm1/ewarren/ancillaries/'
-    # murkdatadir = '/data/jcmm1/ewarren/ancillaries/murk_aer/'+model_type+'/'
-    # npydatadir = datadir + 'npy/'
-    # metadatadir = datadir + 'metadata/'
+    # # Laptop directories
+    # maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
+    # datadir = maindir + 'data/'
+    # metadatadir = datadir
+    # npydatadir = datadir + 'npy/PCA/'
+    # ukvdatadir = maindir + 'data/UKV/'
     # ceilDatadir = datadir + 'L1/'
     # modDatadir = datadir + model_type + '/'
     # pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
     # savedir = pcsubsampledir + data_var+'/'
     # clustersavedir = savedir + 'cluster_analysis/'
     # histsavedir = clustersavedir + 'histograms/'
-    # npysavedir = datadir + 'npy/PCA/'
+    # #npysavedir = datadir + 'npy/PCA/'
+
+    # MO directories
+    maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
+    datadir = '/data/jcmm1/ewarren/'
+    orogdatadir = '/data/jcmm1/ewarren/ancillaries/'
+    murkdatadir = '/data/jcmm1/ewarren/ancillaries/murk_aer/'+model_type+'/'
+    npydatadir = datadir + 'npy/'
+    metadatadir = datadir + 'metadata/'
+    ceilDatadir = datadir + 'L1/'
+    modDatadir = datadir + model_type + '/'
+    pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
+    savedir = pcsubsampledir + data_var+'/'
+    clustersavedir = savedir + 'cluster_analysis/'
+    histsavedir = clustersavedir + 'histograms/'
+    npysavedir = datadir + 'npy/PCA/'
 
     # ==============================================================================
     # Read
