@@ -16,7 +16,7 @@ sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ceilU
 import numpy as np
 
 import matplotlib
-#matplotlib.use('Agg')
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cbook as cbook
 import matplotlib.ticker as ticker
@@ -30,16 +30,16 @@ from copy import deepcopy
 import sunrise
 import iris
 
-import ellUtils.ellUtils as eu
-import ceilUtils.ceilUtils as ceil
-from forward_operator import FOUtils as FO
-from forward_operator import FOconstants as FOcon
+# import ellUtils.ellUtils as eu
+# import ceilUtils.ceilUtils as ceil
+# from forward_operator import FOUtils as FO
+# from forward_operator import FOconstants as FOcon
 
-# import ellUtils as eu
-# import ceilUtils as ceil
-# import FOUtils as FO
-# import FOconstants as FOcon
-# # from Utils import FOconstants as FOcon
+import ellUtils as eu
+import ceilUtils as ceil
+import FOUtils as FO
+import FOconstants as FOcon
+# from Utils import FOconstants as FOcon
 
 def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx, **kwargs):
     """
@@ -643,6 +643,38 @@ def rotate_loadings_and_calc_scores(loadings, cov_data, eig_vals):
 
     return reordered_rot_loadings, reordered_rot_pcScores, perc_var_explained_ratio_rot
 
+def read_orography(model_type):
+
+    """
+    Load in orography from NWP models
+    :param model_type:
+    :return: orog (cube)
+
+    Spacing and ranges need slightly changing as orography lat and lons are not precisely equal to those saved
+    from the UKV elsewhere, because of numerical precision. Each defined orog lat and lon range, with the
+    subsequent output was checked against the UKV to ensure they match.
+
+    """
+
+    if model_type == 'UKV':
+        ukvdatadir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter' \
+                     '/improveNetworks/data/UKV/ancillaries/'
+        spacing = 0.0135 # spacing between lons and lats in rotated space
+        UK_lat_constraint = iris.Constraint(grid_latitude=lambda cell: -1.2326999-spacing <= cell <= -0.7872) # +spacing
+        UK_lon_constraint = iris.Constraint(grid_longitude=lambda cell: 361.21997 <= cell <= 361.73297+spacing)
+        orog = iris.load_cube(ukvdatadir + 'UKV_orography.nc', constraint=UK_lat_constraint & UK_lon_constraint)
+
+    elif model_type == 'LM':
+        orogdatadir = '/data/jcmm1/ewarren/ancillaries/'
+        spacing = 0.003  # checked
+        orog_con = iris.Constraint(name='surface_altitude',
+                                   coord_values={
+                                       'grid_latitude': lambda cell: -1.214 - spacing < cell < -0.776,
+                                       'grid_longitude': lambda cell: 1.21 < cell < 1.732 + spacing})
+        orog = iris.load_cube(orogdatadir + '20181022T2100Z_London_charts', orog_con)
+
+    return orog
+
 # statistics
 
 def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars, ceil_metadata, height_i_label,
@@ -886,37 +918,6 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
 
     """Plot all EOFs for this height - save in eofsavedir (should be a subdirectory based on subsampled input data)"""
 
-    def read_orography(model_type):
-
-        """
-        Load in orography from NWP models
-        :param model_type:
-        :return: orog (cube)
-
-        Spacing and ranges need slightly changing as orography lat and lons are not precisely equal to those saved
-        from the UKV elsewhere, because of numerical precision. Each defined orog lat and lon range, with the
-        subsequent output was checked against the UKV to ensure they match.
-
-        """
-
-        if model_type == 'UKV':
-            ukvdatadir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter' \
-                         '/improveNetworks/data/UKV/ancillaries/'
-            spacing = 0.0135 # spacing between lons and lats in rotated space
-            UK_lat_constraint = iris.Constraint(grid_latitude=lambda cell: -1.2326999-spacing <= cell <= -0.7872) # +spacing
-            UK_lon_constraint = iris.Constraint(grid_longitude=lambda cell: 361.21997 <= cell <= 361.73297+spacing)
-            orog = iris.load_cube(ukvdatadir + 'UKV_orography.nc', constraint=UK_lat_constraint & UK_lon_constraint)
-
-        elif model_type == 'LM':
-            orogdatadir = ''
-            orog_con = iris.Constraint(name='surface_altitude',
-                                       coord_values={
-                                           'grid_latitude': lambda cell: -1.214 - spacing < cell < -0.776,
-                                           'grid_longitude': lambda cell: 1.21 < cell < 1.732 + spacing})
-            orog = iris.load_cube(orogdatadir + '20181022T2100Z_London_charts', orog_con)
-
-        return orog
-
     # read in orography data to plot underneath EOFs
     orog = read_orography(model_type)
 
@@ -954,8 +955,8 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
         #plt.annotate('max', (lons[eof_i_max_idx][0], lats[eof_i_max_idx][0]))
 
         # plot orography
-        #levels = np.arange(60, 270, 30)
-        cont = ax.contour(lons, lats, orog.data, cmap='OrRd') # cmap='YlOrRd'
+        levels = np.arange(30, 180, 30)
+        cont = ax.contour(lons, lats, orog.data, cmap='OrRd', levels=levels) # cmap='YlOrRd'
         ax.clabel(cont, fmt='%1d') # , color='black'
 
         # dash the lowest orographic contour
@@ -963,8 +964,9 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
         plt.setp(zc, linestyle='--')
 
         divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=-0.1)
-        plt.colorbar(im, cax=cax, format='%1.3f')
+        cax = divider.append_axes("right", size="5%", pad=-0.15)
+        cbar = plt.colorbar(im, cax=cax, format='%1.3f')
+        cbar.ax.tick_params(labelsize=13)
         # plt.colorbar(cont, cax=cax)
 
         # plot each ceilometer location
@@ -983,6 +985,8 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
         ax.set_aspect(aspectRatio, adjustable=None)
         #plt.tight_layout()
         plt.subplots_adjust(bottom=0.1, top=0.9, left=0.1)
+        ax.xaxis.set_ticks(np.arange(-0.5, 0.3, 0.1)) # paper plot
+        ax.yaxis.set_ticks(np.arange(51.3, 51.6, 0.1)) # paper plot
         savename = height_i_label +'_'+matrix_type + str(m_idx + 1) + '_' + data_var + '.png'
         plt.savefig(matrixsavedir + savename)
         plt.close(fig)
@@ -1291,45 +1295,24 @@ if __name__ == '__main__':
     #pcsubsample = 'full'
     #pcsubsample = '11-18_hr_range'
     pcsubsample = 'daytime'
-    # pcsubsample = 'nighttime'
+    #pcsubsample = 'nighttime'
 
     # ------------------
 
     # which modelled data to read in
-    model_type = 'UKV'
-    #model_type = 'LM'
+    #model_type = 'UKV'
+    model_type = 'LM'
     #res = FOcon.model_resolution[model_type]
     Z='21'
 
-    #laptop directories - list needs filtering of MO machine directories
-    maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-    datadir = maindir + 'data/'
-    # ceilDatadir = datadir + 'L1/'
-    modDatadir = datadir + model_type + '/'
-    metadatadir = datadir
-    #metadatadir = '/data/jcmm1/ewarren/metadata/'
-    #modDatadir = datadir
-    pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
-    savedir = pcsubsampledir + data_var+'/'
-    topmeddir = savedir + 'top_median/'
-    botmeddir = savedir + 'bot_median/'
-    eofsavedir = savedir + 'EOFs/'
-    rotEOFsavedir = savedir + 'rotEOFs/'
-    rotPCscoresdir = savedir + 'rotPCs/'
-    pcsavedir = savedir + 'PCs/'
-    expvarsavedir = savedir + 'explained_variance/'
-    rotexpvarsavedir = savedir + 'rot_explained_variance/'
-    boxsavedir = savedir + 'boxplots/'
-    corrmatsavedir = savedir + 'corrMatrix/'
-    npysavedir = maindir + '/data/npy/PCA/'
-    windrosedir = savedir + 'windrose/'
-
-    # # MO directories
-    # maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
-    # datadir = '/data/jcmm1/ewarren//full_forecasts/'+model_type+'/'
+    # #laptop directories - list needs filtering of MO machine directories
+    # maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
+    # datadir = maindir + 'data/'
     # # ceilDatadir = datadir + 'L1/'
-    # modDatadir = datadir + '/London/'
-    # metadatadir = '/data/jcmm1/ewarren/metadata/'
+    # modDatadir = datadir + model_type + '/'
+    # metadatadir = datadir
+    # #metadatadir = '/data/jcmm1/ewarren/metadata/'
+    # #modDatadir = datadir
     # pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
     # savedir = pcsubsampledir + data_var+'/'
     # topmeddir = savedir + 'top_median/'
@@ -1342,8 +1325,29 @@ if __name__ == '__main__':
     # rotexpvarsavedir = savedir + 'rot_explained_variance/'
     # boxsavedir = savedir + 'boxplots/'
     # corrmatsavedir = savedir + 'corrMatrix/'
-    # npysavedir = '/data/jcmm1/ewarren/npy/'
+    # npysavedir = maindir + '/data/npy/PCA/'
     # windrosedir = savedir + 'windrose/'
+
+    # MO directories
+    maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
+    datadir = '/data/jcmm1/ewarren//full_forecasts/'+model_type+'/'
+    # ceilDatadir = datadir + 'L1/'
+    modDatadir = datadir + '/London/'
+    metadatadir = '/data/jcmm1/ewarren/metadata/'
+    pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
+    savedir = pcsubsampledir + data_var+'/'
+    topmeddir = savedir + 'top_median/'
+    botmeddir = savedir + 'bot_median/'
+    eofsavedir = savedir + 'EOFs/'
+    rotEOFsavedir = savedir + 'rotEOFs/'
+    rotPCscoresdir = savedir + 'rotPCs/'
+    pcsavedir = savedir + 'PCs/'
+    expvarsavedir = savedir + 'explained_variance/'
+    rotexpvarsavedir = savedir + 'rot_explained_variance/'
+    boxsavedir = savedir + 'boxplots/'
+    corrmatsavedir = savedir + 'corrMatrix/'
+    npysavedir = '/data/jcmm1/ewarren/npy/'
+    windrosedir = savedir + 'windrose/'
 
     # intial test case
     # daystr = ['20180406']
@@ -1392,8 +1396,8 @@ if __name__ == '__main__':
     ceil_metadata = ceil.read_ceil_metadata(metadatadir, ceilsitefile)
 
     # 10=471.7m # np.arange(24) # 4 = 111.7m
-    height_idx = 4
-    #height_idx = int(sys.argv[1])
+    #height_idx = 4
+    height_idx = int(sys.argv[1])
     #for height_idx in np.arange(1,24):
     
     #for height_idx in [int(sys.argv[1])]: #np.arange(24):# [0]: #np.arange(24): # max 30 -> ~ 3.1km = too high! v. low aerosol; [8] = 325 m; [23] = 2075 m
@@ -1500,6 +1504,10 @@ if __name__ == '__main__':
         reordered_rot_pcScores = pcScores
         perc_var_explained_ratio_rot = perc_var_explained_unrot_keep
 
+    # temp numpy save to help LM plotting, given how long it takes to process
+    np_dict = {'rotLoadings': reordered_rot_loadings, 'level_height': height_i, 'perc_var_explained_ratio_rot': perc_var_explained_ratio_rot}
+    np.save(npysavedir + 'nptempsave_'+str(height_i)+'.npy', np_dict)
+
     # ==============================================================================
     # Calculate and save statistics
     # ==============================================================================
@@ -1520,6 +1528,7 @@ if __name__ == '__main__':
     # keep explained variances for unrotated and rotated EOFs
     statistics['unrot_exp_variance'] = perc_var_explained_unrot_keep
     statistics['rot_exp_variance'] = perc_var_explained_ratio_rot
+
 
     # Pearson (product moment) correlation between PCs and between EOFs
     if loadings.shape[-1] > 1:
@@ -1550,33 +1559,33 @@ if __name__ == '__main__':
     aspectRatio = float(mod_data['longitude'].shape[0]) / float(mod_data['latitude'].shape[0])
     #aspectRatio = 1.857142 # match UKV plots
 
-    # # 1. colormesh() plot the EOFs for this height
-    # # unrotated
-    # plot_spatial_output_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
-    #                              days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
-    #                              perc_var_explained_unrot_keep, 'EOFs', model_type)
-    # # rotated EOFs
-    # plot_spatial_output_height_i(reordered_rot_loadings, ceil_metadata, lons, lats, rotEOFsavedir,
-    #                              days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
-    #                              perc_var_explained_ratio_rot, 'rotEOFs', model_type)
-    #
-    # # 2. Explain variance vs EOF number
-    # # unrot
-    # line_plot_exp_var_vs_EOF(perc_var_explained_unrot_keep, height_i_label, expvarsavedir, 'EOFs')
-    # # rotated
-    # line_plot_exp_var_vs_EOF(perc_var_explained_ratio_rot, height_i_label, rotexpvarsavedir, 'rotEOFs')
-    #
-    # # 3. PC timeseries
-    # # unrotated
-    # line_plot_PCs_vs_days_iterate(pcScores,  mod_data['time'], pcsavedir, 'PC')
-    # # rot PC
-    # line_plot_PCs_vs_days_iterate(reordered_rot_pcScores, mod_data['time'], rotPCscoresdir, 'rotPC')
-    #
-    # # 4. Boxplot the statistics for each var and PC combination
-    # # Create boxplots for each variable subsampled using each PC (better than the bar chart plottng below)
-    # boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, statistics['main_stats'], boxsavedir,
-    #               height_i_label)
-    #
+    # 1. colormesh() plot the EOFs for this height
+    # unrotated
+    plot_spatial_output_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
+                                 days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
+                                 perc_var_explained_unrot_keep, 'EOFs', model_type)
+    # rotated EOFs
+    plot_spatial_output_height_i(reordered_rot_loadings, ceil_metadata, lons, lats, rotEOFsavedir,
+                                 days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
+                                 perc_var_explained_ratio_rot, 'rotEOFs', model_type)
+
+    # 2. Explain variance vs EOF number
+    # unrot
+    line_plot_exp_var_vs_EOF(perc_var_explained_unrot_keep, height_i_label, expvarsavedir, 'EOFs')
+    # rotated
+    line_plot_exp_var_vs_EOF(perc_var_explained_ratio_rot, height_i_label, rotexpvarsavedir, 'rotEOFs')
+
+    # 3. PC timeseries
+    # unrotated
+    line_plot_PCs_vs_days_iterate(pcScores,  mod_data['time'], pcsavedir, 'PC')
+    # rot PC
+    line_plot_PCs_vs_days_iterate(reordered_rot_pcScores, mod_data['time'], rotPCscoresdir, 'rotPC')
+
+    # 4. Boxplot the statistics for each var and PC combination
+    # Create boxplots for each variable subsampled using each PC (better than the bar chart plottng below)
+    boxplots_vars(met_vars, mod_data, boxplot_stats_top, boxplot_stats_bot, statistics['main_stats'], boxsavedir,
+                  height_i_label)
+
     # # 5. wind rose
     # create_windrose(mod_data, pcsubsample, windrosedir, height_i_label)
 
