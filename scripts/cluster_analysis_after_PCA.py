@@ -394,7 +394,7 @@ if __name__ == '__main__':
 
     #a = cluster.ward_tree(data, n_clusters=5)
     #linkage_type = ''
-    print 'start clustering...'
+    print 'start clustering......'
     cluster = AgglomerativeClustering(n_clusters=n_clusters, affinity='euclidean', linkage=linkage_type)
     cluster.fit_predict(data)
     # +1 so first group = 1, not 0. Also it produces a 1D array, flattened Fortran style (column-wise)
