@@ -42,8 +42,8 @@ from scipy import stats
 import os
 from sklearn.cluster import AgglomerativeClustering
 
-# from ellUtils import ellUtils as eu
-# from ceilUtils import ceilUtils as ceil
+#from ellUtils import ellUtils as eu
+#from ceilUtils import ceilUtils as ceil
 
 import ellUtils as eu
 import ceilUtils as ceil
@@ -129,14 +129,7 @@ def load_loadings_lon_lats(npydatadir, data_var, pcsubsample, model_type):
     for i in np.arange(24):
         filename = npydatadir + model_type + '_' + data_var + '_' + pcsubsample + '_heightidx' + '{}'.format(i) + \
                    '_unrotLoadings.npy'
-        if model_type == 'UKV':
-            raw += [np.load(filename).flat[0]['loadings']]
-        # changed numpy saving for 117.7 m and accidentally broke consistency. Therefore load in i=4 differently...
-        elif model_type == 'LM':
-            if i != 4:
-                raw += [np.load(filename).flat[0]['loadings'][str(i)]]
-            else:
-                raw += [np.load(filename).flat[0]['loadings']]
+        raw += [np.load(filename).flat[0]['loadings']]
 
     # data = np.hstack([np.hstack(height_i['loadings'].values()) for height_i in raw]) # old LM
     data = np.hstack(raw)
@@ -146,6 +139,56 @@ def load_loadings_lon_lats(npydatadir, data_var, pcsubsample, model_type):
 
     return data, lons, lats
 
+def load_urban_loadings_lon_lats(npydatadir, data_var, pcsubsample, model_type):
+
+    """
+    Load in the PCA loadings, longitude and latitudes, given the model_type
+    :param model_type:
+    :return: data, lons, lats
+    """
+
+    # if model_type == 'UKV':
+    #     filename = npysavedir + data_var + '_' + pcsubsample + '_unrotLoadings.npy'
+    #     raw = np.load(filename).flat[0]
+    #     data = np.hstack(raw['loadings'].values())  # .shape(Xi, all_loadings)
+    #     # just get a few heights
+    #     # data = np.hstack([raw['loadings'][str(i)] for i in np.arange(7,20)])
+    #     lons = raw['longitude']
+    #     lats = raw['latitude']
+    #
+    raw = []
+    for i in range(24):
+
+        filename = npydatadir + model_type + '_' + data_var + '_' + pcsubsample + '_heightidx' + '{}'.format(i) + \
+                   '_unrotLoadings.npy'
+
+        # extract out just the manually identified urban EOFs
+        # Note: EOFs at 1461, 1605 and 1755 were mixed with other processes (inconsistent wind speeds, PC pattern to
+        #   urban EOFs)
+        # loadings extracted to keep the dimension e.g. [:, [3]] = shape of (n, 1) instead of (n)
+        if i in range(4):
+            raw += [np.load(filename).flat[0]['loadings'][:, [3]]] # extract EOF4 (idx = 3)
+        elif i in range(4, 19):
+            raw += [np.load(filename).flat[0]['loadings'][:, [4]]] # extract EOF5 (idx = 4)
+        elif i in range(22, 24):
+            raw += [np.load(filename).flat[0]['loadings'][:, [3]]]
+
+        # if i in range(4):
+        #     raw_i = np.load(filename).flat[0]['loadings'][:, 3] # extract EOF4 (idx = 3)
+        #     raw += [raw_i[:, np.newaxis]]
+        # elif i in range(4, 19):
+        #     raw_i = np.load(filename).flat[0]['loadings'][:, 4] # extract EOF5 (idx = 4)
+        #     raw += [raw_i[:, np.newaxis]]
+        # elif i in range(22, 24):
+        #     raw_i = np.load(filename).flat[0]['loadings'][:, 3]
+        #     raw += [raw_i[:, np.newaxis]]  # extract EOF5 (idx = 4)
+    # data = np.hstack([np.hstack(height_i['loadings'].values()) for height_i in raw]) # old LM
+    data = np.hstack(raw)
+    # use last filename in loop as long and lats are the same through all the numpy files.
+    lons = np.load(filename).flat[0]['longitude']
+    lats = np.load(filename).flat[0]['latitude']
+
+    return data, lons, lats
 
 def load_loading_explained_variance_and_height(npydatadir, data_var, pcsubsample, model_type):
     unrot_exp_var = []
@@ -160,6 +203,27 @@ def load_loading_explained_variance_and_height(npydatadir, data_var, pcsubsample
         height += [height_i]
 
     return np.array(unrot_exp_var), np.array(height)
+
+def load_urban_loading_explained_variance_and_height(npydatadir, data_var, pcsubsample, model_type):
+    unrot_exp_var = []
+    height = []
+    for i in np.arange(24):
+        filename = npydatadir + model_type + '_' + data_var + '_' + pcsubsample + '_heightidx' + '{}'.format(i) + \
+                   '_statistics.npy'
+
+        # manually identified urban EOFs only
+        if i in range(4):
+            unrot_exp_var += [np.sum(np.load(filename).flat[0]['unrot_exp_variance'][3])]
+            height += [np.around(np.load(filename).flat[0]['level_height'], decimals=1)]
+        elif i in range(4, 19):
+            unrot_exp_var += [np.sum(np.load(filename).flat[0]['unrot_exp_variance'][4])]
+            height += [np.around(np.load(filename).flat[0]['level_height'], decimals=1)]
+        elif i in range(22, 24):
+            unrot_exp_var += [np.sum(np.load(filename).flat[0]['unrot_exp_variance'][3])]
+            height += [np.around(np.load(filename).flat[0]['level_height'], decimals=1)]
+
+    return np.array(unrot_exp_var), np.array(height)
+
 
 
 def plot_cluster_analysis_groups(groups_reshape, lons, lats, orog, ceil_metadata, unrot_exp_var, n_clusters,
@@ -201,7 +265,8 @@ def plot_cluster_analysis_groups(groups_reshape, lons, lats, orog, ceil_metadata
     cbar.ax.set_yticklabels([str(i) for i in group_numbers])
 
     # plot orography
-    cont = ax.contour(lons, lats, orog.data, cmap='OrRd')  # cmap='OrRd' # colors='black'
+    levels=np.arange(30,300,30)
+    cont = ax.contour(lons, lats, orog.data, cmap='OrRd', levels=levels)  # cmap='OrRd' # colors='black'
     ax.clabel(cont, fmt='%1d')  # , color='black'
     # dash the lowest orographic contour
     zc = cont.collections[0]
@@ -246,8 +311,8 @@ if __name__ == '__main__':
     # subsampled?
     #pcsubsample = 'full'
     #pcsubsample = '11-18_hr_range'
-    pcsubsample = 'daytime'
-    #pcsubsample = 'nighttime'
+    #pcsubsample = 'daytime'
+    pcsubsample = 'nighttime'
 
     # cluster type - to match the AgglomerativeClustering function and used in savename
     linkage_type = 'ward'
@@ -286,6 +351,8 @@ if __name__ == '__main__':
     modDatadir = datadir + model_type + '/'
     pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
     savedir = pcsubsampledir + data_var+'/'
+    # clustersavedir = savedir + 'urban_cluster_analysis/'
+    # histsavedir = clustersavedir + 'urban_histograms/'
     clustersavedir = savedir + 'cluster_analysis/'
     histsavedir = clustersavedir + 'histograms/'
     npysavedir = datadir + 'npy/PCA/'
@@ -305,7 +372,8 @@ if __name__ == '__main__':
 
     # 2. Loadings
     # Read in the unrotated loadings and extract out the loadings (data), longitude and latitude (WGS84 space)
-    data, lons, lats = load_loadings_lon_lats(npydatadir, data_var, pcsubsample, model_type)
+    data, lons, lats = load_loadings_lon_lats(npydatadir, data_var, pcsubsample, model_type) # All EOFs
+    # data, lons, lats = load_urban_loadings_lon_lats(npydatadir, data_var, pcsubsample, model_type) #ID'd as urban
 
     # 3. Orography
     # manually checked and lined up against UKV data used in PCA.
@@ -318,6 +386,7 @@ if __name__ == '__main__':
 
     # EOF statistics
     unrot_exp_var, height = load_loading_explained_variance_and_height(npydatadir, data_var, pcsubsample, model_type)
+    # unrot_exp_var, height = load_urban_loading_explained_variance_and_height(npydatadir, data_var, pcsubsample, model_type)
 
     # ==============================================================================
     # Process data
@@ -325,6 +394,7 @@ if __name__ == '__main__':
 
     #a = cluster.ward_tree(data, n_clusters=5)
     #linkage_type = ''
+    print 'start clustering...'
     cluster = AgglomerativeClustering(n_clusters=n_clusters, affinity='euclidean', linkage=linkage_type)
     cluster.fit_predict(data)
     # +1 so first group = 1, not 0. Also it produces a 1D array, flattened Fortran style (column-wise)
@@ -411,7 +481,7 @@ if __name__ == '__main__':
             colour_i = cmap(float(i)/len(axs))
 
             freq, x, patches = ax_i.hist(ancil_groups[i], bins=np.arange(vmin, vmax, step),
-                         histtype='stepfilled',alpha=0.8, color=colour_i)
+                         histtype='stepfilled',alpha=0.8, color=colour_i, edgecolor='black', linewidth=1.0)
             eu.add_at(ax_i, str(i+1), loc=5, size=13) # +1 to have groups start from 1 not 0.
 
             ax_i.tick_params(direction='in', top=False, right=False, labelsize=13, pad=0)
@@ -432,8 +502,8 @@ if __name__ == '__main__':
         #plt.suptitle('K-W test p=%3.2f' % kw_p)
 
         ax_0 = eu.fig_majorAxis(fig)
-        ax_0.set_ylabel('Frequency')
-        plt.xlabel('Height [m]')
+        ax_0.set_ylabel('Frequency', fontsize=13)
+        plt.xlabel('Height [m]', fontsize=13)
         plt.tight_layout(h_pad=0.0)
 
         savename = data_var+'_'+pcsubsample+'_'+ancil_type+'_'+str(n_clusters)+'clusters.png'
