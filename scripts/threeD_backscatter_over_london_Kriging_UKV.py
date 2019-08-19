@@ -57,13 +57,10 @@ from forward_operator import FOconstants as FOcon
 # from Utils import FOconstants as FOcon
 
 from pykrige.ok import OrdinaryKriging
-# from pykrige.uk import UniversalKriging
-# from pykrige.ok3d import OrdinaryKriging3D
 from pykrige.rk import Krige
 from pykrige.compat import GridSearchCV
 
 # Kriging Doc: https://media.readthedocs.org/pdf/pykrige/latest/pykrige.pdf
-
 
 # great circle formula
 def Haversine_formula(lats, lons):
@@ -227,11 +224,34 @@ def twoD_range_one_day(day_time, day_height, day_data, mlh_obs, data_var, pltsav
     :param mlh_obs (dict): mixing layer height observations
     :return: fix, ax
     """
+    # [u'seaborn-darkgrid',
+    #  u'seaborn-notebook',
+    #  u'classic',
+    #  u'seaborn-ticks',
+    #  u'grayscale',
+    #  u'bmh',
+    #  u'seaborn-talk',
+    #  u'dark_background',
+    #  u'ggplot',
+    #  u'fivethirtyeight',
+    #  u'seaborn-colorblind',
+    #  u'seaborn-deep',
+    #  u'seaborn-whitegrid',
+    #  u'seaborn-bright',
+    #  u'seaborn-poster',
+    #  u'seaborn-muted',
+    #  u'seaborn-paper',
+    #  u'seaborn-white',
+    #  u'seaborn-pastel',
+    #  u'seaborn-dark',
+    #  u'seaborn-dark-palette']
+    # plt.style.use('seaborn-deep')
 
     # Get discrete colourbar
     vmin = 0.0
     vmax = 65.0
-    cmap = cm.get_cmap('viridis_r', 13)
+    # cmap = cm.get_cmap('viridis_r', 13)
+    cmap = cm.get_cmap('viridis', 13)
 
     day_hrs = [i.hour for i in day_time]
     fig, ax = plt.subplots(1, figsize=(7, 5))
@@ -243,11 +263,12 @@ def twoD_range_one_day(day_time, day_height, day_data, mlh_obs, data_var, pltsav
     plt.legend(loc='upper left')
     plt.ylabel('height [m]')
     plt.xlabel('time [hr]')
+    plt.show()
 
-    plt.suptitle(mod_data['time'][0].strftime('%Y-%m-%d') + ' ' + data_var +
+    plt.suptitle(day_time[0].strftime('%Y-%m-%d') + ' ' + data_var +
                  '; WS=' + U_str + '; aer='+aer_str+'; RH='+rh_str+'; Udir='+dir_wind_str)
-    plt.savefig(pltsavedir + mod_data['time'][0].strftime('%Y-%m-%d_') + data_var + '.png')
-    print 'saved: '+pltsavedir + mod_data['time'][0].strftime('%Y-%m-%d_') + data_var + '.png'
+    plt.savefig(pltsavedir + day_time[0].strftime('%Y-%m-%d_') + data_var + '.png')
+    print 'saved: '+pltsavedir + day_time[0].strftime('%Y-%m-%d_') + data_var + '.png'
     plt.close()
 
     return fig, ax
@@ -302,8 +323,8 @@ if __name__ == '__main__':
     height_range = np.arange(0, 24)
     # N-S extract over central London for UKV, given larger domain
     #lon_range = np.arange(41, 47)
-    lr_s = 41
-    lr_e = 47
+    #lr_s = 41
+    #lr_e = 47
 
     # save?
     numpy_save = True
@@ -341,8 +362,7 @@ if __name__ == '__main__':
     #           '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
     #           '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
 
-    daystr = ['20180803','20180804','20180805','20180806',
-              '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
+    daystr = ['20180902','20180903']
     days_iterate = eu.dateList_to_datetime(daystr)
 
     # import all site names and heights
@@ -399,26 +419,6 @@ if __name__ == '__main__':
         # .shape = (hour, height, lat, lon)
         mod_data = FO.mod_site_extract_calc_3D(day, modDatadir, model_type, 905, metvars=True)
 
-        # rotate the winds out from rotated grid to normal WGS84
-        # iris.analysis.cartography.rotate_winds()
-
-        # # reduce domain size to match UKV extract
-        # # domain edges found using eu.nearest compared to the UKV extract domain edges
-        # if model_type == 'UKV':
-        #     mod_data['longitude'] = mod_data['longitude'][lon_range]
-        #     mod_data[data_var] = mod_data[data_var][:, :, :, lon_range]
-        #     mod_data['u_wind'] = mod_data['u_wind'][:, :, :, lon_range]
-        #     mod_data['v_wind'] = mod_data['v_wind'][:, :, :, lon_range]
-        #     mod_data['RH'] = mod_data['RH'][:, :, :, lon_range]
-        #     mod_data['aerosol_for_visibility'] = mod_data['aerosol_for_visibility'][:, :, :, lon_range]
-            
-        # # shrink data size to help with debugging
-        # if (model_type == 'LM') & (test_mode == True):
-        #     mod_data['longitude'] = mod_data['longitude'][:50]
-        #     mod_data['latitude'] = mod_data['latitude'][:50]
-        #     mod_data[data_var] = mod_data[data_var][:, :, :50, :50]
-
-        # testing
         # rotate the lon and lats onto a normal geodetic grid (WGS84) [degrees] and expands lon and lat by 1 so it can
         # be used in plt.pcolormesh() which wants corner edges not center points
         rotLon2d_deg, rotLat2d_deg = rotate_lon_lat_2D(mod_data['longitude'], mod_data['latitude'], model_type)
@@ -426,61 +426,26 @@ if __name__ == '__main__':
         # convert lons and lats to distance [km] from the bottom left corner of the grid
         # unrotLon2d, unrotLat2d, unrotLon1d, unrotLat1d= convert_deg_to_km(mod_data['longitude'][lon_range], mod_data['latitude'])
         unrotLon2d, unrotLat2d, unrotLon1d, unrotLat1d = \
-            convert_deg_to_km(mod_data['longitude'][lr_s:lr_e], mod_data['latitude'])
+            convert_deg_to_km(mod_data['longitude'], mod_data['latitude'])
 
-        # # unrotate u and v wind components
-        # # get u and v wind, lon and lats. In netCDF, u_wind = x_wind, v_wind = y_wind
-        # rot_cs = iris.coord_systems.RotatedGeogCS(37.5, 177.5, ellipsoid=iris.coord_systems.GeogCS(6371229.0))
-        #
-        # # normal lon_lats to regrid u and v winds onto
-        # reg_cube = iris.cube.Cube(mod_data['aerosol_for_visibility'])
-        # aer_lat = iris.coords.DimCoord(mod_data['latitude'], 'grid_latitude', coord_system=rot_cs)
-        # aer_lon = iris.coords.DimCoord(mod_data['longitude'], 'grid_longitude', coord_system=rot_cs)
-        # reg_cube.add_dim_coord(aer_lat, 2)
-        # reg_cube.add_dim_coord(aer_lon, 3)
-        #
-        # # get u_winds with their lons and lats
-        # u_wind_data = eu.netCDF_read('C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/data' \
-        # '/UKV/extract_London_prodm_op_ukv_20180802_21_full.nc',
-        #                             vars=['latitude','longitude_xwind'])
-        # u_cube = iris.cube.Cube(mod_data['u_wind'])
-        # u_lat = iris.coords.DimCoord(u_wind_data['latitude'], 'grid_latitude', coord_system=rot_cs)
-        # u_lon = iris.coords.DimCoord(u_wind_data['longitude_xwind'], 'grid_longitude', coord_system=rot_cs)
-        # u_cube.add_dim_coord(u_lat, 2)
-        # u_cube.add_dim_coord(u_lon, 3)
-        # u_cube.coord('grid_latitude').convert_units('degrees')
-        # u_cube.coord('grid_longitude').convert_units('degrees')
-        # u_cube.regridded(reg_cube, mode='bilinear')
-        #
-        # # get v_winds with their lons and lats
-        # v_wind_data = eu.netCDF_read('C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/data' \
-        # '/UKV/extract_London_prodm_op_ukv_20180802_21_full.nc',
-        #                             vars=['latitude_ywind','longitude'])
-        # v_cube = iris.cube.Cube(mod_data['v_wind'])
-        # v_lat = iris.coords.DimCoord(mod_data['latitude_ywind'], 'grid_latitude', coord_system=rot_cs)
-        # v_lon = iris.coords.DimCoord(mod_data['longitude'], 'grid_longitude', coord_system=rot_cs)
-        # v_cube.add_dim_coord(v_lat, 2)
-        # v_cube.add_dim_coord(v_lon, 3)
-
-
-        # set n_lags equal to the latitude (longer dimension of the data)
-        n_lags = len(mod_data['latitude'])
+        # set n_lags equal to the longer dimension of the data
+        n_lags = np.max([len(mod_data['latitude']), len(mod_data['longitude'])])
 
         # find important days (low wind, high aerosol
         # U wind from ground to 955 m - try to find day with lowest wind values (more local source emissions)
         # alternative - try when murk was high!
-        u_wind = mod_data['u_wind'][:, :, :, lr_s:lr_e]
-        v_wind = mod_data['v_wind'][:, :, :, lr_s:lr_e]
+        u_wind = mod_data['u_wind']
+        v_wind = mod_data['v_wind']
         U = np.sqrt((u_wind**2.0) + (v_wind**2.0))
         U_mean[d] = np.mean(U)
         # where blowing from # tested u_wind=-3.125, v_wind=0.875 => dir_wind=105.642...
         # take mean of wind components, then calculate direction
-        u_wind_i = np.mean(mod_data['u_wind'][:, :, :, lr_s:lr_e])
-        v_wind_i = np.mean(mod_data['v_wind'][:, :, :, lr_s:lr_e])
-        dir_wind_mean[d] = 180 + ((180/np.pi)*np.arctan2(u_wind_i, v_wind_i))
+        u_wind_i = np.mean(mod_data['u_wind'])
+        v_wind_i = np.mean(mod_data['v_wind'])
+        dir_wind_mean[d] = 180 + (np.arctan2(u_wind_i, v_wind_i) * (180.0 / np.pi))
 
-        aer_mean[d] = np.mean(mod_data['aerosol_for_visibility'][:, :, :, lr_s:lr_e])
-        rh_mean[d] = np.mean(mod_data['RH'][:, :, :, lr_s:lr_e])
+        aer_mean[d] = np.mean(mod_data['aerosol_for_visibility'])
+        rh_mean[d] = np.mean(mod_data['RH'])
         # read in MLH data
         mlh_obs = ceil.read_all_ceils(day, site_bsc, ceilDatadir, 'MLH', timeMatch=time_match)
 
@@ -501,48 +466,50 @@ if __name__ == '__main__':
                 # extract 2D cross section for this time
                 # just London area
                 if data_var == 'backscatter':# or
-                    data = np.log10(mod_data[data_var][hr_idx, height_idx, :, lr_s:lr_e])
+                    data = np.log10(mod_data[data_var][hr_idx, height_idx, :, :])
                     #print 'data logged'
                 elif data_var == 'specific_humidity':
-                    data = np.log10(mod_data[data_var][hr_idx, height_idx, :, lr_s:lr_e]*1e3) # [g kg-1]
+                    data = np.log10(mod_data[data_var][hr_idx, height_idx, :, :]*1e3) # [g kg-1]
                 else:
-                    data = mod_data[data_var][hr_idx, height_idx, :, lr_s:lr_e]
+                    data = mod_data[data_var][hr_idx, height_idx, :, :]
 
-                # # test which variogram model type to fit to the data using cross validation.
-                # #   Kriging will use ordinary method and fixed number of lags regardless
-                # # PyKrige documentation 4.1: Krige CV
-                # param_dict = {"method": ["ordinary"],
-                #               #'anisotropy_scaling':[0.5, 1, 2, 3],
-                #               #'anisotropy_angle': [0, 90, 180, 270],
-                #               "variogram_model": ["linear", "power", "spherical", 'exponential'],
-                #               "nlags": [n_lags]}
-                #               #"weight":[False]}
-                #
-                # # R^2 (coefficient of determination) regression score function which can
-                # #   go negative and below -1.0 (see examples in first link below).
-                # # https://scikit-learn.org/stable/modules/generated/sklearn.metrics.r2_score.html#sklearn.metrics.r2_score
-                # # https://scikit-learn.org/stable/modules/model_evaluation.html#r2-score
-                # estimator = GridSearchCV(Krige(), param_dict) # , verbose=True
-                #
-                # # data - needs to be X : array-like, shape = [n_samples, n_features]
-                # # Training vector, where n_samples is the number of samples and n_features is the number of features.
-                # # location [lat, lon]
-                # #! Note: import to make sure reshaped axis keep the data in the correct order so X_i(lon_i, lat_i) and not
-                # #   some random lon or lat point. Be careful when stacking and rotating - always do checks agains the
-                # #   original, input variable! e.g. check with y[30] = [lon[30,0], lat[30,0]]
-                #
+                # test which variogram model type to fit to the data using cross validation.
+                #   Kriging will use ordinary method and fixed number of lags regardless
+                # PyKrige documentation 4.1: Krige CV
+                param_dict = {"method": ["ordinary"],
+                              #'anisotropy_scaling':[0.5, 1, 2, 3],
+                              #'anisotropy_angle': [0, 90, 180, 270],
+                              "variogram_model": ["linear", "power", "spherical", 'exponential'],
+                              "nlags": [n_lags]}
+                              #"weight":[False]}
+
+                # Default for scoring = R^2 (coefficient of determination) regression score function which can
+                #   go negative and below -1.0 due to cross validation summing many R^2 (see examples in first link below).
+                # https://scikit-learn.org/stable/modules/generated/sklearn.metrics.r2_score.html#sklearn.metrics.r2_score
+                # https://scikit-learn.org/stable/modules/model_evaluation.html#r2-score
+
+                # https://scikit-learn.org/stable/modules/model_evaluation.html#scoring-parameter
+                estimator = GridSearchCV(Krige(), param_dict, scoring='neg_mean_squared_error') # , verbose=True
+
+                # data - needs to be X : array-like, shape = [n_samples, n_features]
+                # Training vector, where n_samples is the number of samples and n_features is the number of features.
+                # location [lat, lon]
+                #! Note: import to make sure reshaped axis keep the data in the correct order so X_i(lon_i, lat_i) and not
+                #   some random lon or lat point. Be careful when stacking and rotating - always do checks agains the
+                #   original, input variable! e.g. check with y[30] = [lon[30,0], lat[30,0]]
+
                 y = data.flatten()
                 X = np.stack((unrotLon2d.flatten(), unrotLat2d.flatten()), axis=1)
-                # estimator.fit(X=X, y=y)
+                estimator.fit(X=X, y=y)
 
                 #  test whether with or without weight is best with spherical
-                # if estimator.best_params_['variogram_model'] == 'spherical':
-                param_dict = {"method": ["ordinary"],
-                              "variogram_model": ["spherical"],
-                              "nlags": [n_lags],
-                              'weight':[True, False]}
-                estimator = GridSearchCV(Krige(), param_dict)
-                estimator.fit(X=X, y=y)
+                if estimator.best_params_['variogram_model'] == 'spherical':
+                    param_dict = {"method": ["ordinary"],
+                                  "variogram_model": ["spherical"],
+                                  "nlags": [n_lags],
+                                  'weight':[True, False]}
+                    estimator = GridSearchCV(Krige(), param_dict, scoring='neg_mean_squared_error')
+                    estimator.fit(X=X, y=y)
 
                 # # print results
                 # if hasattr(estimator, 'best_score_'):
@@ -553,7 +520,6 @@ if __name__ == '__main__':
                 #     for key in ['mean_test_score', 'mean_train_score',
                 #                 'param_method', 'param_variogram_model']:
                 #         print(' - {} : {}'.format(key, estimator.cv_results_[key]))
-
                 
                 # extract out the best parameters based on the cross validation. Remove 'method' key as it cannot
                 #   be taken as a keyword by OrdinaryKriging() (which itself uses the ordinary method)
@@ -576,16 +542,17 @@ if __name__ == '__main__':
                 #                      anisotropy_angle=np.mean(dir_wind), #anisotropy_scaling=np.mean(U),
                 #                      verbose=True,enable_plotting=True) #
 
-                # start plotting data
-                plt.figure()
-                OK.semivariance # y values
-                OK.lags # x values
+                # OK.semivariance = y values; OK.lags = x values
+                plt.subplots(1, figsize=(5,4))
                 plt.scatter(OK.lags, OK.semivariance)
                 plt.plot(OK.lags, OK.variogram_function(OK.variogram_model_parameters, OK.lags), 'k-')
                 ax = plt.gca()
                 plt.suptitle(hr.strftime('%Y-%m-%d_%H') + ' beta; height=' + str(mod_data['level_height'][height_idx]) + 'm')
                 ax.set_xlabel('Distance [km]')
-                ax.set_ylabel('Semi-variance')
+                ax.set_ylabel('Semi-variance', labelpad=0.5)
+                plt.axis('tight')
+                plt.tight_layout()
+                plt.subplots_adjust(top=0.9)
                 savename = hr.strftime('%Y-%m-%d') + '_{:04.1f}m_'.format(height_i) + hr.strftime('hr%H') +'_variogram.png'
                 plt.savefig(savesubdir + savename)
                 plt.close()
@@ -593,7 +560,7 @@ if __name__ == '__main__':
                 # # look at variogram_model_parameters to find the nugget, sill etc.
                 # #! list order varies, depending on the variogram_model used!
                 # #! gives back partial sill (full sill - nugget), not the full sill
-                if best_params['variogram_model'] == 'spherical':
+                if best_params['variogram_model'] in ['spherical','exponential'] :
                     sill[d, hr_idx, height_idx] = OK.variogram_model_parameters[0]
                     v_range[d, hr_idx, height_idx] = OK.variogram_model_parameters[1]
                     nugget[d, hr_idx, height_idx] = OK.variogram_model_parameters[2]
