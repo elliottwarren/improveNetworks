@@ -16,11 +16,9 @@ sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ceilU
 import numpy as np
 
 import matplotlib
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cbook as cbook
-import matplotlib.ticker as ticker
-import matplotlib.patheffects as PathEffects
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import os
 import datetime as dt
@@ -30,16 +28,16 @@ from copy import deepcopy
 import sunrise
 import iris
 
-# import ellUtils.ellUtils as eu
-# import ceilUtils.ceilUtils as ceil
-# from forward_operator import FOUtils as FO
-# from forward_operator import FOconstants as FOcon
+import ellUtils.ellUtils as eu
+import ceilUtils.ceilUtils as ceil
+from forward_operator import FOUtils as FO
+from forward_operator import FOconstants as FOcon
 
-import ellUtils as eu
-import ceilUtils as ceil
-import FOUtils as FO
-import FOconstants as FOcon
-# from Utils import FOconstants as FOcon
+# import ellUtils as eu
+# import ceilUtils as ceil
+# import FOUtils as FO
+# import FOconstants as FOcon
+# # from Utils import FOconstants as FOcon
 
 def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx, **kwargs):
     """
@@ -678,7 +676,7 @@ def read_orography(model_type):
 # statistics
 
 def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars, ceil_metadata, height_i_label,
-                                 topmeddir, botmeddir):
+                                 topmeddir, botmeddir, model_type, aspectRatio):
 
     """
     Calculate statistics for each variable, for each PC, for this height
@@ -689,8 +687,10 @@ def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars, cei
     :return: statistics_height (dict([var][pc_i_name])): statistics for this height
     """
 
-    def plot_medians(med, lons, lats, ceil_metadata, pc_i_name, height_i_label, var, days_iterate, meddir,
-                     med_type, wpvalue):
+    orog = read_orography(model_type)
+
+    def plot_medians(med, lons, lats, orog, ceil_metadata, pc_i_name, height_i_label, var, days_iterate, meddir,
+                     med_type, wpvalue, aspectRatio):
 
         """
         Plot the top or bottom median
@@ -716,31 +716,52 @@ def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars, cei
         vmin = np.percentile(med, 2)
         vmax = np.percentile(med, 98)
 
-        aspectRatio = float(lons.shape[0]) / float(lats.shape[1])
-        fig, ax = plt.subplots(1, 1, figsize=(4.5, 4.5*0.8))
-        # fig, ax = plt.subplots(1, 1, figsize=(4.5 * 1.0, 4.5))
-        mesh=plt.pcolormesh(lons, lats, med, cmap=plt.get_cmap('jet'), vmin=vmin, vmax=vmax)
-        #plt.colorbar()
-        the_divider = make_axes_locatable(ax)
-        color_axis = the_divider.append_axes("right", size="5%", pad=0.1)
-        cbar = plt.colorbar(mesh, cax=color_axis)
-        ax.set_xlabel(r'$Longitude$')
-        ax.set_ylabel(r'$Latitude$')
+        fig, ax = plt.subplots(1, 1, figsize=(6 * aspectRatio, 5))
+        # fig, ax = plt.subplots(1, 1, figsize=(4.5, 4.5*0.8))
+        # mesh=plt.pcolormesh(lons, lats, med, cmap=plt.get_cmap('jet'), vmin=vmin, vmax=vmax)
+        # plt.colorbar()
+        # the_divider = make_axes_locatable(ax)
+        # color_axis = the_divider.append_axes("right", size="5%", pad=0.1)
+        # cbar = plt.colorbar(mesh, cax=color_axis)
 
-        #ax.axes.set_aspect(1)#(aspectRatio)
+        cmap_i = plt.get_cmap('viridis')
+        # cmap_i = plt.get_cmap('Blues')
+        im = plt.pcolormesh(lons, lats, med, cmap=cmap_i, vmin=vmin, vmax=vmax)
+        plt.tick_params(direction='out', top=False, right=False, labelsize=13)
+        plt.setp(ax.get_xticklabels(), rotation=35, fontsize=13)
 
+        ax.set_xlabel('Longitude [degrees]', fontsize=13)
+        ax.set_ylabel('Latitude [degrees]', fontsize=13)
+        ax.axis('tight')
+
+        # plot orography
+        levels = np.arange(30, 180, 30)
+        cont = ax.contour(lons, lats, orog.data, cmap='OrRd', levels=levels) # cmap='YlOrRd'
+        ax.clabel(cont, fmt='%1d') # , color='black'
+
+        # dash the lowest orographic contour
+        zc = cont.collections[0]
+        plt.setp(zc, linestyle='--')
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=-0.15)
+        cbar = plt.colorbar(im, cax=cax) # , format='%1.2f'
+        cbar.ax.tick_params(labelsize=13)
 
         # plot each ceilometer location
         for site, loc in ceil_metadata.iteritems():
             # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
             plt.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
             plt.annotate(site, (loc[0], loc[1]))
-        plt.tight_layout()
-        plt.subplots_adjust(top=0.8, bottom=0.2)
+
+        #plt.tight_layout()
+        #plt.subplots_adjust(top=0.8, bottom=0.2)
         #forceAspect(ax,aspect=aspectRatio)
 
         plt.suptitle(med_type + '; ' + pc_i_name + '; height=' + height_i_label + '; ' + var + ';\n ' + str(
             len(days_iterate)) + ' cases; p=%5.2f' % wpvalue)
+        ax.set_aspect(aspectRatio, adjustable=None)
+        plt.subplots_adjust(bottom=0.1, top=0.9, left=0.1)
         savename = height_i_label + '_' + med_type + '_' + var + pc_i_name + '_' + '.png'
         plt.savefig(meddir + savename)
         plt.close(fig)
@@ -806,10 +827,10 @@ def pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars, cei
             statistics_i['wilcoxon_signed_rank_p_medians'] = wpvalue
 
             # plot and save, top and bottom medians
-            plot_medians(top_x_med, lons, lats, ceil_metadata, pc_i_name, height_i_label, var, days_iterate,
-                         topmeddir, 'top_median', wpvalue)
-            plot_medians(bot_y_med, lons, lats, ceil_metadata, pc_i_name, height_i_label, var, days_iterate,
-                         botmeddir, 'bot_median', wpvalue)
+            plot_medians(top_x_med, lons, lats, orog, ceil_metadata, pc_i_name, height_i_label, var, days_iterate,
+                         topmeddir, 'top_median', wpvalue, aspectRatio)
+            plot_medians(bot_y_med, lons, lats, orog , ceil_metadata, pc_i_name, height_i_label, var, days_iterate,
+                         botmeddir, 'bot_median', wpvalue, aspectRatio)
 
 
 
@@ -943,8 +964,6 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
         plt.tick_params(direction='out', top=False, right=False, labelsize=13)
         plt.setp(ax.get_xticklabels(), rotation=35, fontsize=13)
 
-        # ax.set_xlabel(r'$Longitude$')
-        # ax.set_ylabel(r'$Latitude$')
         ax.set_xlabel('Longitude [degrees]', fontsize=13)
         ax.set_ylabel('Latitude [degrees]', fontsize=13)
         ax.axis('tight')
@@ -967,7 +986,6 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
         cax = divider.append_axes("right", size="5%", pad=-0.15)
         cbar = plt.colorbar(im, cax=cax, format='%1.3f')
         cbar.ax.tick_params(labelsize=13)
-        # plt.colorbar(cont, cax=cax)
 
         # plot each ceilometer location
         for site, loc in ceil_metadata.iteritems():
@@ -1010,7 +1028,7 @@ def line_plot_exp_var_vs_EOF(perc_explained, height_i_label, expvarsavedir, matr
 
     return
 
-def line_plot_PCs_vs_days_iterate(scores, time, pcsavedir, pctype):
+def old_line_plot_PCs_vs_days_iterate(scores, time, pcsavedir, pctype):
 
     """Plot the EOFs paired PCs, against the days_iterate (x axis)"""
 
@@ -1072,6 +1090,91 @@ def line_plot_PCs_vs_days_iterate(scores, time, pcsavedir, pctype):
 
         plt.ylabel('score')
         plt.xlabel('date')
+        plt.suptitle(pctype + str(pc_idx + 1) + '; height=' + height_i_label)
+        plt.savefig(pcsavedir + pctype + str(pc_idx + 1) + '; height=' + height_i_label + '.png')
+
+        plt.close(fig)
+
+    return
+
+def line_plot_PCs_vs_days_iterate(scores, time, pcsavedir, pctype):
+
+    """Plot the EOFs paired PCs, against the days_iterate (x axis)"""
+
+    for pc_idx in np.arange(scores.shape[-1]):
+
+        fig, ax = plt.subplots(1, 1, figsize=(12, 4))
+
+        # extract out this PC
+        pc_i = scores[:, pc_idx]  # / np.mean(pcs[:, pc_idx])
+
+        # plot each day separately so it doesn't spike between days
+        #days =
+        # plt.plot(pc_norm, label='PC' + str(pc_idx + 1))
+
+        # get idx for the start of each day
+        sep_days = np.array([dt.datetime(i.year, i.month, i.day) for i in time])
+        uniq_days = np.unique(sep_days)
+        idx = np.array([np.where(sep_days == i)[0][0] for i in uniq_days]) # [0][0] = first instance
+
+        # plot each day separately (varying hours so use the idx to identify which data belongs to this day.
+        day_ticks = [] # store start idx positions for the day's tick and label
+        for i, idx_i in enumerate(idx):
+
+            # find range for the day and define where to put it on the axis. Seperate idx for both the data and where
+            #   to put it, so each day's data can have gaps either side of it.
+            #   x_axis_idx = where to put it on axis; (+i) is the buffer room
+            #   x_data_idx = the data idx position for plotting
+
+            # parts of x_axis_idx
+            #    end gap needs to be defined in the loop
+            gap = 0
+            start_idx = idx_i+(gap*i)-i
+            day_ticks += [idx_i+(gap*i)-i]
+
+            if idx_i != idx[-1]:
+                end_idx = idx[i + 1] + (gap * i) - (i + 1)
+                x_axis_idx = np.arange(start_idx, end_idx + 1)  # +1 to include the end idx position from np.arange()
+                x_data_idx = np.arange(idx_i, idx[i + 1])
+            else:
+                end_idx = len(sep_days) + (gap * i)- (i + 1)
+                x_axis_idx = np.arange(start_idx, end_idx + 1)
+                x_data_idx = np.arange(idx_i, len(sep_days))
+
+            #x_axis_idx = np.arange(start_idx, end_idx + 1) # +1 to include the end idx position from np.arange()
+            #x_data_idx = np.arange(idx_i, idx[i+1])
+            # else: # if at the end of idx, the final bit of the PC will be for this day
+            #     x_axis_idx  = np.arange(idx_i+gap, len(sep_days)+gap)
+            #     x_data_idx = np.arange(idx_i, len(sep_days))
+
+            # # find range for the day (x positions for the data)
+            # if idx_i != idx[-1]:
+            #     x_range = np.arange(idx_i, idx[i+1])
+            # else: # if at the end of idx, the final bit of the PC will be for this day
+            #     x_range  = np.arange(idx_i, len(sep_days))
+
+            plt.plot(x_axis_idx, pc_i[x_data_idx], label='PC' + str(pc_idx + 1), color='blue', linewidth=1)
+
+        plt.vlines(day_ticks, -4.1, 3.1)
+        plt.xticks(day_ticks)
+        # get the days in a nice string format, again to plot 1 for each day
+        # labels = [sep_days[i].strftime('%Y/%m/%d') for i in idx]
+        labels = [sep_days[i].strftime('%d/%m') for i in idx]
+        ax.set_xticklabels(labels)
+
+        plt.autoscale(enable=True, axis='x', tight=True)
+        plt.ylim([-4.1, 3.1])
+
+        ax.yaxis.set_ticks_position('left')
+        ax.xaxis.set_ticks_position('bottom')
+
+        for label in ax.get_xticklabels():
+            label.set_rotation(90)
+
+        plt.subplots_adjust(bottom=0.4)
+
+        plt.ylabel('Score')
+        plt.xlabel('Date [dd/mm]')
         plt.suptitle(pctype + str(pc_idx + 1) + '; height=' + height_i_label)
         plt.savefig(pcsavedir + pctype + str(pc_idx + 1) + '; height=' + height_i_label + '.png')
 
@@ -1300,40 +1403,19 @@ if __name__ == '__main__':
     # ------------------
 
     # which modelled data to read in
-    #model_type = 'UKV'
-    model_type = 'LM'
+    model_type = 'UKV'
+    #model_type = 'LM'
     #res = FOcon.model_resolution[model_type]
     Z='21'
 
-    # #laptop directories - list needs filtering of MO machine directories
-    # maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-    # datadir = maindir + 'data/'
-    # # ceilDatadir = datadir + 'L1/'
-    # modDatadir = datadir + model_type + '/'
-    # metadatadir = datadir
-    # #metadatadir = '/data/jcmm1/ewarren/metadata/'
-    # #modDatadir = datadir
-    # pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
-    # savedir = pcsubsampledir + data_var+'/'
-    # topmeddir = savedir + 'top_median/'
-    # botmeddir = savedir + 'bot_median/'
-    # eofsavedir = savedir + 'EOFs/'
-    # rotEOFsavedir = savedir + 'rotEOFs/'
-    # rotPCscoresdir = savedir + 'rotPCs/'
-    # pcsavedir = savedir + 'PCs/'
-    # expvarsavedir = savedir + 'explained_variance/'
-    # rotexpvarsavedir = savedir + 'rot_explained_variance/'
-    # boxsavedir = savedir + 'boxplots/'
-    # corrmatsavedir = savedir + 'corrMatrix/'
-    # npysavedir = maindir + '/data/npy/PCA/'
-    # windrosedir = savedir + 'windrose/'
-
-    # MO directories
-    maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
-    datadir = '/data/jcmm1/ewarren//full_forecasts/'+model_type+'/'
+    #laptop directories - list needs filtering of MO machine directories
+    maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
+    datadir = maindir + 'data/'
     # ceilDatadir = datadir + 'L1/'
-    modDatadir = datadir + '/London/'
-    metadatadir = '/data/jcmm1/ewarren/metadata/'
+    modDatadir = datadir + model_type + '/'
+    metadatadir = datadir
+    #metadatadir = '/data/jcmm1/ewarren/metadata/'
+    #modDatadir = datadir
     pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
     savedir = pcsubsampledir + data_var+'/'
     topmeddir = savedir + 'top_median/'
@@ -1346,8 +1428,29 @@ if __name__ == '__main__':
     rotexpvarsavedir = savedir + 'rot_explained_variance/'
     boxsavedir = savedir + 'boxplots/'
     corrmatsavedir = savedir + 'corrMatrix/'
-    npysavedir = '/data/jcmm1/ewarren/npy/'
+    npysavedir = maindir + '/data/npy/PCA/'
     windrosedir = savedir + 'windrose/'
+
+    # # MO directories
+    # maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
+    # datadir = '/data/jcmm1/ewarren//full_forecasts/'+model_type+'/'
+    # # ceilDatadir = datadir + 'L1/'
+    # modDatadir = datadir + '/London/'
+    # metadatadir = '/data/jcmm1/ewarren/metadata/'
+    # pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
+    # savedir = pcsubsampledir + data_var+'/'
+    # topmeddir = savedir + 'top_median/'
+    # botmeddir = savedir + 'bot_median/'
+    # eofsavedir = savedir + 'EOFs/'
+    # rotEOFsavedir = savedir + 'rotEOFs/'
+    # rotPCscoresdir = savedir + 'rotPCs/'
+    # pcsavedir = savedir + 'PCs/'
+    # expvarsavedir = savedir + 'explained_variance/'
+    # rotexpvarsavedir = savedir + 'rot_explained_variance/'
+    # boxsavedir = savedir + 'boxplots/'
+    # corrmatsavedir = savedir + 'corrMatrix/'
+    # npysavedir = '/data/jcmm1/ewarren/npy/'
+    # windrosedir = savedir + 'windrose/'
 
     # intial test case
     # daystr = ['20180406']
@@ -1396,8 +1499,8 @@ if __name__ == '__main__':
     ceil_metadata = ceil.read_ceil_metadata(metadatadir, ceilsitefile)
 
     # 10=471.7m # np.arange(24) # 4 = 111.7m
-    #height_idx = 4
-    height_idx = int(sys.argv[1])
+    height_idx = 4
+    #height_idx = int(sys.argv[1])
     #for height_idx in np.arange(1,24):
     
     #for height_idx in [int(sys.argv[1])]: #np.arange(24):# [0]: #np.arange(24): # max 30 -> ~ 3.1km = too high! v. low aerosol; [8] = 325 m; [23] = 2075 m
@@ -1436,6 +1539,10 @@ if __name__ == '__main__':
         data = np.log10(mod_data[data_var])
     else:# (data_var == 'air_temperature') | (data_var == 'RH'):
         data = mod_data[data_var]
+
+    # aspect ratio for the map plots
+    aspectRatio = float(mod_data['longitude'].shape[0]) / float(mod_data['latitude'].shape[0])
+    #aspectRatio = 1.857142 # match UKV plots
 
     # ==============================================================================
     # PCA
@@ -1544,7 +1651,7 @@ if __name__ == '__main__':
     #   distribution
     statistics_height, boxplot_stats_top, boxplot_stats_bot = \
         pcScore_subsample_statistics(reordered_rot_pcScores, mod_data, met_vars, ceil_metadata, height_i_label,
-                             topmeddir, botmeddir)
+                             topmeddir, botmeddir, model_type, aspectRatio)
 
     # copy statistics for this height into the full statistics dicionary for all heights
     statistics['main_stats'] = deepcopy(statistics_height)
@@ -1554,10 +1661,6 @@ if __name__ == '__main__':
     # ---------------------------------------------------------
     os.system('echo beginning plotting...')
     os.system('echo '+str(dt.datetime.now() - script_start))
-
-    # aspect ratio for the map plots
-    aspectRatio = float(mod_data['longitude'].shape[0]) / float(mod_data['latitude'].shape[0])
-    #aspectRatio = 1.857142 # match UKV plots
 
     # 1. colormesh() plot the EOFs for this height
     # unrotated
