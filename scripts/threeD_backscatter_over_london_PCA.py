@@ -1112,6 +1112,8 @@ def line_plot_PCs_vs_days_iterate(scores, time, pcsavedir, pctype):
         #days =
         # plt.plot(pc_norm, label='PC' + str(pc_idx + 1))
 
+        plt.axhline(0, color='grey', alpha=0.8, linestyle='--')
+
         # get idx for the start of each day
         sep_days = np.array([dt.datetime(i.year, i.month, i.day) for i in time])
         uniq_days = np.unique(sep_days)
