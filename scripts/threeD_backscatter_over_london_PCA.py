@@ -935,12 +935,36 @@ def plot_corr_matrix_table(matrix, mattype, data_var, height_i_label):
 
 def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedir,
                        days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
-                       perc_var_explained, matrix_type, model_type):
+                       perc_var_explained, matrix_type, model_type, overplot=''):
 
-    """Plot all EOFs for this height - save in eofsavedir (should be a subdirectory based on subsampled input data)"""
+    """
+    Plot all EOFs for this height - save in eofsavedir (should be a subdirectory based on subsampled input data)
 
-    # read in orography data to plot underneath EOFs
-    orog = read_orography(model_type)
+    :param matrix:
+    :param ceil_metadata:
+    :param lons:
+    :param lats:
+    :param matrixsavedir:
+    :param days_iterate:
+    :param height_i_label:
+    :param X_shape:
+    :param lat_shape:
+    :param aspectRatio:
+    :param data_var:
+    :param perc_var_explained:
+    :param matrix_type:
+    :param model_type:
+    :param overplot: 'orography', 'w_wind', or '' for nothing
+    :return:
+    """
+
+    #save str
+    if overplot == 'w_wind':
+        overplotstr = '_'+overplot
+
+    if overplot == 'orography':
+        # Read in orography data to plot underneath EOFs
+        orog = read_orography(model_type)
 
     for m_idx in np.arange(matrix.shape[1]):
 
@@ -973,19 +997,26 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
         #plt.scatter(lons[eof_i_max_idx][0], lats[eof_i_max_idx][0], facecolors='none', edgecolors='black')
         #plt.annotate('max', (lons[eof_i_max_idx][0], lats[eof_i_max_idx][0]))
 
-        # plot orography
-        levels = np.arange(30, 180, 30)
-        cont = ax.contour(lons, lats, orog.data, cmap='OrRd', levels=levels) # cmap='YlOrRd'
-        ax.clabel(cont, fmt='%1d') # , color='black'
+        if overplot == 'orography':
+            # plot orography
+            levels = np.arange(30, 180, 30)
+            cont = ax.contour(lons, lats, orog.data, cmap='OrRd', levels=levels) # cmap='YlOrRd'
+            ax.clabel(cont, fmt='%1d') # , color='black'
 
-        # dash the lowest orographic contour
-        zc = cont.collections[0]
-        plt.setp(zc, linestyle='--')
+            # dash the lowest orographic contour
+            zc = cont.collections[0]
+            plt.setp(zc, linestyle='--')
 
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("right", size="5%", pad=-0.15)
         cbar = plt.colorbar(im, cax=cax, format='%1.3f')
         cbar.ax.tick_params(labelsize=13)
+
+        # if overplot == 'w_wind':
+        #     # 23:00 23/10/2018 (EOF2 nighttime v. strong)
+        #     levels = np.arange(-0.3, 0.3, 0.1)
+        #     cont = ax.contour(lons, lats, mod_data['w_wind'][-1, :, :], colours='k', levels=levels)
+        #     ax.clabel(cont, fmt='%1.1f')  # , color='black'
 
         # plot each ceilometer location
         for site, loc in ceil_metadata.iteritems():
@@ -1005,7 +1036,7 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
         plt.subplots_adjust(bottom=0.1, top=0.9, left=0.1)
         ax.xaxis.set_ticks(np.arange(-0.5, 0.3, 0.1)) # paper plot
         ax.yaxis.set_ticks(np.arange(51.3, 51.6, 0.1)) # paper plot
-        savename = height_i_label +'_'+matrix_type + str(m_idx + 1) + '_' + data_var + '.png'
+        savename = height_i_label +'_'+matrix_type + str(m_idx + 1) + '_' + data_var + overplotstr+'.png'
         plt.savefig(matrixsavedir + savename)
         plt.close(fig)
 
@@ -1399,8 +1430,8 @@ if __name__ == '__main__':
     # subsampled?
     #pcsubsample = 'full'
     #pcsubsample = '11-18_hr_range'
-    pcsubsample = 'daytime'
-    #pcsubsample = 'nighttime'
+    #pcsubsample = 'daytime'
+    pcsubsample = 'nighttime'
 
     # ------------------
 
@@ -1501,7 +1532,7 @@ if __name__ == '__main__':
     ceil_metadata = ceil.read_ceil_metadata(metadatadir, ceilsitefile)
 
     # 10=471.7m # np.arange(24) # 4 = 111.7m
-    height_idx = 4
+    height_idx = 10
     #height_idx = int(sys.argv[1])
     #for height_idx in np.arange(1,24):
     
@@ -1668,11 +1699,11 @@ if __name__ == '__main__':
     # unrotated
     plot_spatial_output_height_i(eig_vecs_keep, ceil_metadata, lons, lats, eofsavedir,
                                  days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
-                                 perc_var_explained_unrot_keep, 'EOFs', model_type)
+                                 perc_var_explained_unrot_keep, 'EOFs', model_type, overplot='orography')
     # rotated EOFs
     plot_spatial_output_height_i(reordered_rot_loadings, ceil_metadata, lons, lats, rotEOFsavedir,
                                  days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
-                                 perc_var_explained_ratio_rot, 'rotEOFs', model_type)
+                                 perc_var_explained_ratio_rot, 'rotEOFs', model_type, overplot='w_wind')
 
     # 2. Explain variance vs EOF number
     # unrot
@@ -1693,6 +1724,11 @@ if __name__ == '__main__':
 
     # # 5. wind rose
     # create_windrose(mod_data, pcsubsample, windrosedir, height_i_label)
+
+    # rotated EOFs
+    plot_spatial_output_height_i(reordered_rot_loadings, ceil_metadata, lons, lats, rotEOFsavedir,
+                                 days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
+                                 perc_var_explained_ratio_rot, 'rotEOFs', model_type, overplot='w_wind')
 
     # ---------------------------------------------------------
     # Save stats
