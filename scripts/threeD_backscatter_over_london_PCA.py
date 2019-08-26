@@ -1157,7 +1157,7 @@ def line_plot_PCs_vs_days_iterate(scores, time, pcsavedir, pctype):
 
             plt.plot(x_axis_idx, pc_i[x_data_idx], label='PC' + str(pc_idx + 1), color='blue', linewidth=1)
 
-        plt.vlines(day_ticks, -4.1, 3.1)
+        #plt.vlines(day_ticks, -4.1, 3.1) # for paper quality figure
         plt.xticks(day_ticks)
         # get the days in a nice string format, again to plot 1 for each day
         # labels = [sep_days[i].strftime('%Y/%m/%d') for i in idx]
@@ -1165,7 +1165,7 @@ def line_plot_PCs_vs_days_iterate(scores, time, pcsavedir, pctype):
         ax.set_xticklabels(labels)
 
         plt.autoscale(enable=True, axis='x', tight=True)
-        plt.ylim([-4.1, 3.1])
+        #plt.ylim([-4.1, 3.1]) # for paper quality figure
 
         ax.yaxis.set_ticks_position('left')
         ax.xaxis.set_ticks_position('bottom')
