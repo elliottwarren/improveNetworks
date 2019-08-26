@@ -263,12 +263,13 @@ if __name__ == '__main__':
     # savedir = maindir + 'figures/model_runs/cross_sections/'
 
     # # test case from unused paper 2 UKV data
-    # daystr = ['20180903']`
+    # daystr = ['20180903']
+    daystr = ['20181023']
     # current set (missing 20180215 and 20181101) ## start again at 15-05-2018
-    daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
-              '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
-              '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
-              '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
+    # daystr = ['20180406','20180418','20180419','20180420','20180505','20180506','20180507',
+    #           '20180514','20180515','20180519','20180520','20180622','20180623','20180624',
+    #           '20180625','20180626','20180802','20180803','20180804','20180805','20180806',
+    #           '20180901','20180902','20180903','20181007','20181010','20181020','20181023']
 
     # large domain
     # daystr = ['20180406', '20180514', '20180622', '20180902']
@@ -279,7 +280,7 @@ if __name__ == '__main__':
     # Read and process data
     # ==============================================================================
 
-    height_idx = 4 # 10
+    height_idx = 10 # 10
 
     #d = 0; day = days_iterate[0]
     for d, day in enumerate(days_iterate):
@@ -325,7 +326,7 @@ if __name__ == '__main__':
 
             # make directory paths for the output figures
             # pcsubsampledir, then savedir needs to be checked first as they are parent dirs
-            crosssavedir = savedir + var + '/large_domain/'
+            crosssavedir = savedir + var +'/' #+ '/large_domain/'
             if os.path.exists(crosssavedir) == False:
                 os.mkdir(crosssavedir)
 
@@ -339,58 +340,69 @@ if __name__ == '__main__':
             # Extract is transposed when indexed like this but
             # vmin = np.percentile(mod_data[var][:, height_idx, :, lon_range], 2)
             # vmax = np.percentile(mod_data[var][:, height_idx, :, lon_range], 98)
-            vmin = np.percentile(mod_data[var], 2)
-            vmax = np.percentile(mod_data[var], 98)
-
+            # vmin = np.percentile(mod_data[var], 2)
+            # vmax = np.percentile(mod_data[var], 98)
+            if model_type == 'UKV':
+                vmin = -0.4
+                vmax = 0.4
+            else:
+                vmin = -0.7
+                vmax = 0.7
             # make a daily wind rose
             # save directory
             windrosedir_daily = windrosedir + 'daily/'
-            create_wind_rose(mod_data['u_wind'], mod_data['v_wind'], day, height_i_str, windrosedir, 'daily')
+            #create_wind_rose(mod_data['u_wind'], mod_data['v_wind'], day, height_i_str, windrosedir, 'daily')
 
             hr_idx =23; hr = mod_data['time'][23] # night-time gravity wave pattern
-            for hr_idx, hr in enumerate(mod_data['time'][:-1]):  # miss out midnight of the next day...
-                # fig = plt.figure(figsize=(6.5, 3.5))
-                # ax = fig.add_subplot(111, aspect=aspectRatio)
-                fig = plt.figure(figsize=(8.5, 5))
-                ax = fig.add_subplot(111)
+            # for hr_idx, hr in enumerate(mod_data['time'][:-1]):  # miss out midnight of the next day...
+
+            # ax = fig.add_subplot(111, aspect=aspectRatio)
+            # fig = plt.figure(figsize=(8.5, 5))
+            # ax = fig.add_subplot(111)
+            fig, ax = plt.subplots(1, 1, figsize=(6 * aspectRatio, 5))
 
 
-                # using mod_data[var][hr_idx, :, :, lon_range] does not work as two dimensions are being indexed
-                #      at once! This rearanges the dimensions! Use lon_range[0]:lon_range[-1]+1 instead
-                #data = np.squeeze(mod_data[var][hr_idx, :, :28, 50:])
-                data = np.squeeze(mod_data[var][hr_idx, :, :, :])
+            # using mod_data[var][hr_idx, :, :, lon_range] does not work as two dimensions are being indexed
+            #      at once! This rearanges the dimensions! Use lon_range[0]:lon_range[-1]+1 instead
+            #data = np.squeeze(mod_data[var][hr_idx, :, :28, 50:])
+            data = np.squeeze(mod_data[var][hr_idx, :, :, :])
 
-                if var == 'backscatter':
-                    mesh = ax.pcolormesh(lons[:28, 50:], lats[:28, 50:], data[:28, 50:], vmin=vmin, vmax=vmax,
-                                          norm=LogNorm(), cmap=cm.get_cmap('jet'))
-                else:
-                    # mesh = ax.pcolormesh(lons[:28, 50:], lats[:28, 50:], data[:28, 50:], vmin=vmin, vmax=vmax,
-                    mesh = ax.pcolormesh(lons, lats, data, vmin=vmin, vmax=vmax,
-                                          cmap=cm.get_cmap('jet'))
-                #ax.set_aspect(aspectRatio)
+            if var == 'backscatter':
+                mesh = ax.pcolormesh(lons[:28, 50:], lats[:28, 50:], data[:28, 50:], vmin=vmin, vmax=vmax,
+                                      norm=LogNorm(), cmap=cm.get_cmap('jet'))
+            else:
+                # mesh = ax.pcolormesh(lons[:28, 50:], lats[:28, 50:], data[:28, 50:], vmin=vmin, vmax=vmax,
+                mesh = ax.pcolormesh(lons, lats, data, vmin=vmin, vmax=vmax,
+                                      cmap=cm.get_cmap('jet'))
 
-                the_divider = make_axes_locatable(ax)
-                color_axis = the_divider.append_axes("right", size="5%", pad=0.1)
-                cbar = plt.colorbar(mesh, cax=color_axis)
-                # cbar.set_label('$col bar$', fontsize=21, labelpad=-2)
+            plt.tick_params(direction='out', top=False, right=False, labelsize=13)
+            plt.setp(ax.get_xticklabels(), rotation=35, fontsize=13)
 
-                # plot each ceilometer location
-                for site, loc in ceil_metadata.iteritems():
-                    # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
-                    ax.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
-                    ax.annotate(site, (loc[0], loc[1]))
+            ax.set_xlabel('Longitude [degrees]', fontsize=13)
+            ax.set_ylabel('Latitude [degrees]', fontsize=13)
+            ax.axis('tight')
 
-                ax.set_xlabel(r'$Longitude$')
-                ax.set_ylabel(r'$Latitude$')
-                plt.suptitle(hr.strftime('%Y-%m-%d_%H') + '; height='+str(height_i)+'m')
-                savesubdir = crosssavedir + hr.strftime('%Y-%m-%d') + '/' # sub dir within the savedir
-                savename = '{:04.0f}'.format(height_i) + 'm_'+hr.strftime('%Y-%m-%d_%H')+'.png'
+            the_divider = make_axes_locatable(ax)
+            color_axis = the_divider.append_axes("right", size="5%", pad=-0.15)
+            cbar = plt.colorbar(mesh, cax=color_axis)
+            cbar.ax.tick_params(labelsize=13)
+            # cbar.set_label('$col bar$', fontsize=21, labelpad=-2)
 
-                plt.tight_layout()
+            # plot each ceilometer location
+            for site, loc in ceil_metadata.iteritems():
+                # idx_lon, idx_lat, glon, glat = FO.get_site_loc_idx_in_mod(mod_all_data, loc, model_type, res)
+                ax.scatter(loc[0], loc[1], facecolors='none', edgecolors='black')
+                ax.annotate(site, (loc[0], loc[1]))
+            #plt.suptitle(hr.strftime('%Y-%m-%d_%H') + '; height='+str(height_i)+'m')
+            ax.set_aspect(aspectRatio, adjustable=None)
+            savesubdir = crosssavedir + hr.strftime('%Y-%m-%d') + '/' # sub dir within the savedir
+            savename = '{:04.0f}'.format(height_i) + 'm_'+hr.strftime('%Y-%m-%d_%H')+'.png'
 
-                if os.path.exists(savesubdir) == False:
-                    os.mkdir(savesubdir)
-                plt.savefig(savesubdir + savename)
-                plt.close(fig)
+            #plt.tight_layout()
+
+            if os.path.exists(savesubdir) == False:
+                os.mkdir(savesubdir)
+            plt.savefig(savesubdir + savename)
+            plt.close(fig)
 
     print 'END PROGRAM'
