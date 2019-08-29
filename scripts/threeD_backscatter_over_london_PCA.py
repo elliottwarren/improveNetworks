@@ -16,7 +16,7 @@ sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ceilU
 import numpy as np
 
 import matplotlib
-#matplotlib.use('Agg')
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cbook as cbook
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -28,16 +28,16 @@ from copy import deepcopy
 import sunrise
 import iris
 
-import ellUtils.ellUtils as eu
-import ceilUtils.ceilUtils as ceil
-from forward_operator import FOUtils as FO
-from forward_operator import FOconstants as FOcon
+# import ellUtils.ellUtils as eu
+# import ceilUtils.ceilUtils as ceil
+# from forward_operator import FOUtils as FO
+# from forward_operator import FOconstants as FOcon
 
-# import ellUtils as eu
-# import ceilUtils as ceil
-# import FOUtils as FO
-# import FOconstants as FOcon
-# # from Utils import FOconstants as FOcon
+import ellUtils as eu
+import ceilUtils as ceil
+import FOUtils as FO
+import FOconstants as FOcon
+# from Utils import FOconstants as FOcon
 
 def read_and_compile_mod_data_in_time(days_iterate, modDatadir, model_type, Z, height_idx, **kwargs):
     """
@@ -958,13 +958,16 @@ def plot_spatial_output_height_i(matrix, ceil_metadata, lons, lats, matrixsavedi
     :return:
     """
 
-    #save str
+    # save string and read in orography if needed
     if overplot == 'w_wind':
         overplotstr = '_'+overplot
 
     if overplot == 'orography':
         # Read in orography data to plot underneath EOFs
         orog = read_orography(model_type)
+        overplotstr = ''
+    else:
+        overplotstr = ''
 
     for m_idx in np.arange(matrix.shape[1]):
 
@@ -1436,40 +1439,19 @@ if __name__ == '__main__':
     # ------------------
 
     # which modelled data to read in
-    model_type = 'UKV'
-    #model_type = 'LM'
+    #model_type = 'UKV'
+    model_type = 'LM'
     #res = FOcon.model_resolution[model_type]
     Z='21'
 
-    #laptop directories - list needs filtering of MO machine directories
-    maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-    datadir = maindir + 'data/'
-    # ceilDatadir = datadir + 'L1/'
-    modDatadir = datadir + model_type + '/'
-    metadatadir = datadir
-    #metadatadir = '/data/jcmm1/ewarren/metadata/'
-    #modDatadir = datadir
-    pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
-    savedir = pcsubsampledir + data_var+'/'
-    topmeddir = savedir + 'top_median/'
-    botmeddir = savedir + 'bot_median/'
-    eofsavedir = savedir + 'EOFs/'
-    rotEOFsavedir = savedir + 'rotEOFs/'
-    rotPCscoresdir = savedir + 'rotPCs/'
-    pcsavedir = savedir + 'PCs/'
-    expvarsavedir = savedir + 'explained_variance/'
-    rotexpvarsavedir = savedir + 'rot_explained_variance/'
-    boxsavedir = savedir + 'boxplots/'
-    corrmatsavedir = savedir + 'corrMatrix/'
-    npysavedir = maindir + '/data/npy/PCA/'
-    windrosedir = savedir + 'windrose/'
-
-    # # MO directories
-    # maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
-    # datadir = '/data/jcmm1/ewarren//full_forecasts/'+model_type+'/'
+    # #laptop directories - list needs filtering of MO machine directories
+    # maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
+    # datadir = maindir + 'data/'
     # # ceilDatadir = datadir + 'L1/'
-    # modDatadir = datadir + '/London/'
-    # metadatadir = '/data/jcmm1/ewarren/metadata/'
+    # modDatadir = datadir + model_type + '/'
+    # metadatadir = datadir
+    # #metadatadir = '/data/jcmm1/ewarren/metadata/'
+    # #modDatadir = datadir
     # pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
     # savedir = pcsubsampledir + data_var+'/'
     # topmeddir = savedir + 'top_median/'
@@ -1482,8 +1464,29 @@ if __name__ == '__main__':
     # rotexpvarsavedir = savedir + 'rot_explained_variance/'
     # boxsavedir = savedir + 'boxplots/'
     # corrmatsavedir = savedir + 'corrMatrix/'
-    # npysavedir = '/data/jcmm1/ewarren/npy/'
+    # npysavedir = maindir + '/data/npy/PCA/'
     # windrosedir = savedir + 'windrose/'
+
+    # MO directories
+    maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
+    datadir = '/data/jcmm1/ewarren//full_forecasts/'+model_type+'/'
+    # ceilDatadir = datadir + 'L1/'
+    modDatadir = datadir + '/London/'
+    metadatadir = '/data/jcmm1/ewarren/metadata/'
+    pcsubsampledir = maindir + 'figures/model_runs/PCA/'+pcsubsample+'/'
+    savedir = pcsubsampledir + data_var+'/'
+    topmeddir = savedir + 'top_median/'
+    botmeddir = savedir + 'bot_median/'
+    eofsavedir = savedir + 'EOFs/'
+    rotEOFsavedir = savedir + 'rotEOFs/'
+    rotPCscoresdir = savedir + 'rotPCs/'
+    pcsavedir = savedir + 'PCs/'
+    expvarsavedir = savedir + 'explained_variance/'
+    rotexpvarsavedir = savedir + 'rot_explained_variance/'
+    boxsavedir = savedir + 'boxplots/'
+    corrmatsavedir = savedir + 'corrMatrix/'
+    npysavedir = '/data/jcmm1/ewarren/npy/'
+    windrosedir = savedir + 'windrose/'
 
     # intial test case
     # daystr = ['20180406']
@@ -1532,8 +1535,8 @@ if __name__ == '__main__':
     ceil_metadata = ceil.read_ceil_metadata(metadatadir, ceilsitefile)
 
     # 10=471.7m # np.arange(24) # 4 = 111.7m
-    height_idx = 10
-    #height_idx = int(sys.argv[1])
+    #height_idx = 10
+    height_idx = int(sys.argv[1])
     #for height_idx in np.arange(1,24):
     
     #for height_idx in [int(sys.argv[1])]: #np.arange(24):# [0]: #np.arange(24): # max 30 -> ~ 3.1km = too high! v. low aerosol; [8] = 325 m; [23] = 2075 m
@@ -1703,7 +1706,7 @@ if __name__ == '__main__':
     # rotated EOFs
     plot_spatial_output_height_i(reordered_rot_loadings, ceil_metadata, lons, lats, rotEOFsavedir,
                                  days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
-                                 perc_var_explained_ratio_rot, 'rotEOFs', model_type, overplot='w_wind')
+                                 perc_var_explained_ratio_rot, 'rotEOFs', model_type, overplot='orography')
 
     # 2. Explain variance vs EOF number
     # unrot
@@ -1725,10 +1728,10 @@ if __name__ == '__main__':
     # # 5. wind rose
     # create_windrose(mod_data, pcsubsample, windrosedir, height_i_label)
 
-    # rotated EOFs
-    plot_spatial_output_height_i(reordered_rot_loadings, ceil_metadata, lons, lats, rotEOFsavedir,
-                                 days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
-                                 perc_var_explained_ratio_rot, 'rotEOFs', model_type, overplot='w_wind')
+    # # rotated EOFs
+    # plot_spatial_output_height_i(reordered_rot_loadings, ceil_metadata, lons, lats, rotEOFsavedir,
+    #                              days_iterate, height_i_label, X_shape, lat_shape, aspectRatio, data_var,
+    #                              perc_var_explained_ratio_rot, 'rotEOFs', model_type, overplot='w_wind')
 
     # ---------------------------------------------------------
     # Save stats
