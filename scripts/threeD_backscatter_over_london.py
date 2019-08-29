@@ -10,26 +10,25 @@ sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/Utils
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ellUtils') # general utils
 sys.path.append('/net/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/ceilUtils') # ceil utils
 
-import numpy as np
-#import matplotlib
-#matplotlib.use('Agg')
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import matplotlib.cm as cm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from windrose import WindroseAxes
+import numpy as np
 
 import os
 
-import ellUtils.ellUtils as eu
-import ceilUtils.ceilUtils as ceil
-from forward_operator import FOUtils as FO
-from forward_operator import FOconstants as FOcon
+# import ellUtils.ellUtils as eu
+# import ceilUtils.ceilUtils as ceil
+# from forward_operator import FOUtils as FO
+# from forward_operator import FOconstants as FOcon
 
-# import ellUtils as eu
-# import ceilUtils as ceil
-# import FOUtils as FO
-# import FOconstants as FOcon
+import ellUtils as eu
+import ceilUtils as ceil
+import FOUtils as FO
+import FOconstants as FOcon
 
 def calculate_corner_locations(coord):
 
@@ -187,6 +186,8 @@ def create_wind_rose(u_wind, v_wind, time, height_i_label, windrosedir, t_subsam
     :return:
     """
 
+    from windrose import WindroseAxes
+
     if t_subsample == 'hour':
         if os.path.exists(windrosedir + time.strftime('%Y-%m-%d')) == False:
             os.mkdir(windrosedir + time.strftime('%Y-%m-%d'))
@@ -240,27 +241,27 @@ if __name__ == '__main__':
     # ------------------
 
     # which modelled data to read in
-    model_type = 'UKV'
-    # model_type = 'LM'
+    #model_type = 'UKV'
+    model_type = 'LM'
     #res = FOcon.model_resolution[model_type]
 
-    # laptop directories
-    maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
-    datadir = maindir + 'data/'
-    metadatadir = datadir
-    # modDatadir = datadir + model_type + '/large_domain/'
-    modDatadir = datadir + model_type + '/'
-    savedir = maindir + 'figures/model_runs/cross_sections/'
-    windrosedir = savedir + 'wind_rose/'
-    npysavedir = datadir + 'npy/'
-
-    # # MO directories
-    # maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
-    # datadir = '/data/jcmm1/ewarren//full_forecasts/'+model_type+'/'
-    # # ceilDatadir = datadir + 'L1/'
-    # modDatadir = datadir + '/London/'
-    # metadatadir = '/data/jcmm1/ewarren/metadata/'
+    # # laptop directories
+    # maindir = 'C:/Users/Elliott/Documents/PhD Reading/PhD Research/Aerosol Backscatter/improveNetworks/'
+    # datadir = maindir + 'data/'
+    # metadatadir = datadir
+    # # modDatadir = datadir + model_type + '/large_domain/'
+    # modDatadir = datadir + model_type + '/'
     # savedir = maindir + 'figures/model_runs/cross_sections/'
+    # windrosedir = savedir + 'wind_rose/'
+    # npysavedir = datadir + 'npy/'
+
+    # MO directories
+    maindir = '/home/mm0100/ewarren/Documents/AerosolBackMod/scripts/improveNetworks/'
+    datadir = '/data/jcmm1/ewarren//full_forecasts/'+model_type+'/'
+    # ceilDatadir = datadir + 'L1/'
+    modDatadir = datadir + '/London/'
+    metadatadir = '/data/jcmm1/ewarren/metadata/'
+    savedir = maindir + 'figures/model_runs/cross_sections/'
 
     # # test case from unused paper 2 UKV data
     # daystr = ['20180903']
@@ -348,9 +349,10 @@ if __name__ == '__main__':
             else:
                 vmin = -0.7
                 vmax = 0.7
+
             # make a daily wind rose
             # save directory
-            windrosedir_daily = windrosedir + 'daily/'
+            #windrosedir_daily = windrosedir + 'daily/'
             #create_wind_rose(mod_data['u_wind'], mod_data['v_wind'], day, height_i_str, windrosedir, 'daily')
 
             hr_idx =23; hr = mod_data['time'][23] # night-time gravity wave pattern
